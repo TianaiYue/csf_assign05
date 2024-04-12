@@ -9,7 +9,9 @@ class Table {
 private:
   std::string m_name;
   // TODO: add member variables
-
+  std::map<std::string, std::string> m_data;
+  std::map<std::string, std::string> m_temporary_changes;
+  pthread_mutex_t m_mutex;
   // copy constructor and assignment operator are prohibited
   Table( const Table & );
   Table &operator=( const Table & );
