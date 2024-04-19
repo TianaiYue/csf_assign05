@@ -6,6 +6,34 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
+// Function to send a message to the server
+bool send_message(int sockfd, const std::string& message) {
+    // Send the message
+    ssize_t bytes_sent = send(sockfd, message.c_str(), message.size(), 0);
+    if (bytes_sent < 0) {
+        std::cerr << "Error: Failed to send message\n";
+        return false;
+    }
+    return true;
+}
+
+// Function to receive a message from the server
+bool receive_message(int sockfd, std::string& message) {
+    const int BUFFER_SIZE = 1024;
+    char buffer[BUFFER_SIZE];
+    ssize_t bytes_received = recv(sockfd, buffer, BUFFER_SIZE, 0);
+    if (bytes_received < 0) {
+        std::cerr << "Error: Failed to receive message\n";
+        return false;
+    } else if (bytes_received == 0) {
+        std::cerr << "Error: Connection closed by server\n";
+        return false;
+    }
+    // Append received data to message
+    message.append(buffer, bytes_received);
+    return true;
+}
+
 int main(int argc, char **argv)
 {
   if ( argc != 6 ) {
@@ -20,81 +48,105 @@ int main(int argc, char **argv)
   std::string key = argv[5];
 
   // TODO: implement
-  // Create socket
-    if (port < 1024) {
-        std::cerr << "Invalid port number. Port must be 1024 or above.\n";
+  // Create a socket
+    int sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd < 0) {
+        std::cerr << "Error: Failed to create socket\n";
         return 1;
     }
 
-    // Create socket
-    int sock = socket(AF_INET, SOCK_STREAM, 0);
-    if (sock == -1) {
-        std::cerr << "Failed to create socket.\n";
-        return 1;
-    }
-
-    // Server address structure
-    struct sockaddr_in server;
-    server.sin_family = AF_INET;
-    server.sin_port = htons(port);
+    // Initialize server address structure
+    struct sockaddr_in server_addr;
+    memset(&server_addr, 0, sizeof(server_addr));
+    server_addr.sin_family = AF_INET;
+    server_addr.sin_port = htons(port);
+    inet_pton(AF_INET, hostname.c_str(), &server_addr.sin_addr);
 
     // Connect to the server
-    if (connect(sock, (struct sockaddr *)&server, sizeof(server)) < 0) {
-        std::cerr << "Connection Failed.\n";
-        close(sock);
+    if (connect(sockfd, (struct sockaddr*)&server_addr, sizeof(server_addr)) < 0) {
+        std::cerr << "Error: Failed to connect to server\n";
+        close(sockfd);
         return 1;
     }
 
-    // Send the login request
-    std::string loginMessage = "LOGIN " + username + "\n";
-    if (send(sock, loginMessage.c_str(), loginMessage.size(), 0) < 0) {
-        std::cerr << "Send failed.\n";
-        close(sock);
+    // Send LOGIN message
+    std::string login_msg = "LOGIN " + username + "\n";
+    if (!send_message(sockfd, login_msg)) {
+        close(sockfd);
         return 1;
     }
 
-    // Wait for "OK" response
-    char response[4096] = {0};
-    ssize_t valread = read(sock, response, sizeof(response) - 1);
-    if (valread < 0)
-    {
-        std::cerr << "Read failed.\n";
-        close(sock);
-        return 1;
-    }
-    response[valread] = '\0'; // Null-terminate the response
-    std::cout << "Received: " << response << std::endl;
-    
-    // Check if the response is "OK"
-    if (std::string(response).find("OK") == std::string::npos)
-    {
-        std::cerr << "Did not receive 'OK' response from server.\n";
-        close(sock);
-        return 1;
-    }
-    
-
-    // Send the request
-    std::string message = "GET " + table + " " + key + " FROM " + username + "\n";
-    if (send(sock, message.c_str(), message.size(), 0) < 0) {
-        std::cerr << "Send failed.\n";
-        close(sock);
+    // Receive response for LOGIN message
+    std::string response;
+    if (!receive_message(sockfd, response)) {
+        close(sockfd);
         return 1;
     }
 
-    // Receive the response
-    char buffer[4096] = {0};
-    //ssize_t valread = read(sock, buffer, 4095);
-    if (valread < 0) {
-        std::cerr << "Read failed.\n";
-        close(sock);
+    if (response.find("ERROR") != std::string::npos || response.find("FAILED") != std::string::npos) {
+        std::cerr << "Error: " << response;
+        close(sockfd);
         return 1;
     }
 
-    // Output received data
-    std::cout << "Received: " << buffer << std::endl;
+    // Send GET message
+    std::string get_msg = "GET " + table + " " + key + "\n";
+    if (!send_message(sockfd, get_msg)) {
+        close(sockfd);
+        return 1;
+    }
 
-    // Close socket
-    close(sock);
+    // Receive response for GET message
+    if (!receive_message(sockfd, response)) {
+        close(sockfd);
+        return 1;
+    }
+
+    if (response.find("ERROR") != std::string::npos || response.find("FAILED") != std::string::npos) {
+        std::cerr << "Error: " << response;
+        close(sockfd);
+        return 1;
+    }
+
+    // Send GET message
+    std::string top_msg = "TOP \n";
+    if (!send_message(sockfd, top_msg)) {
+        close(sockfd);
+        return 1;
+    }
+
+    // Receive response for GET message
+    if (!receive_message(sockfd, response)) {
+        close(sockfd);
+        return 1;
+    }
+
+    // Extract the value from the response (assuming the format "DATA value")
+    size_t data_pos = response.find("DATA ");
+    if (data_pos == std::string::npos) {
+        std::cerr << "Error: Unexpected response format\n";
+        close(sockfd);
+        return 1;
+    }
+
+    std::string value = response.substr(data_pos + 5); // Length of "DATA " is 5
+
+    // Print the value
+    std::cout << value;
+
+    // Send BYE message to terminate connection
+    std::string bye_msg = "BYE\n";
+    if (!send_message(sockfd, bye_msg)) {
+        close(sockfd);
+        return 1;
+    }
+
+    // Receive response for BYE message
+    if (!receive_message(sockfd, response)) {
+        close(sockfd);
+        return 1;
+    }
+
+    close(sockfd);
     return 0;
 }
