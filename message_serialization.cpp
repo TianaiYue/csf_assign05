@@ -57,31 +57,34 @@ MessageType stringToMessageType(const std::string& typeStr) {
 void MessageSerialization::encode( const Message &msg, std::string &encoded_msg )
 {
   // TODO: implement
-  std::ostringstream stream;
+    std::ostringstream stream;
     stream << messageTypeToString(msg.get_message_type());
 
     for (unsigned i = 0; i < msg.get_num_args(); i++){
-      stream << " " << msg.get_arg(i);
+        stream << " " << msg.get_arg(i);
     }
 
     stream << "\n";
 
     encoded_msg = stream.str();
     if (encoded_msg.length() > Message::MAX_ENCODED_LEN) {
-        throw InvalidMessage("Encoded message exceeds maximum length.");
+        throw InvalidMessage("Error: encoded message exceeds maximum length.");
     }
 }
 
-void MessageSerialization::decode( const std::string &encoded_msg_, Message &msg )
+void MessageSerialization::decode( const std::string &encoded_msg, Message &msg )
 {
   // TODO: implement
-  if (encoded_msg_.empty() || encoded_msg_.back() != '\n') {
-        throw InvalidMessage("Encoded message does not end with a newline character.");
+    if (encoded_msg.empty() || encoded_msg.back() != '\n') {
+        throw InvalidMessage("Error: encoded message does not terminate with new line.");
+    }
+    if (encoded_msg.length() > Message::MAX_ENCODED_LEN) {
+        throw InvalidMessage("Error: encoded message exceeds maximum length.");
     }
 
     msg.clear_args();
 
-    std::istringstream ss(encoded_msg_);
+    std::istringstream ss(encoded_msg);
     std::string messageTypeStr;
     ss >> messageTypeStr;
     MessageType type = stringToMessageType(messageTypeStr);
