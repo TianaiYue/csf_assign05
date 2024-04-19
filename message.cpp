@@ -95,6 +95,11 @@ void Message::push_arg( const std::string &arg )
   m_args.push_back( arg );
 }
 
+void Message::clear_args() 
+{
+    m_args.clear();
+}
+
 bool Message::is_valid() const
 {
   // TODO: implement
