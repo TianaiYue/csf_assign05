@@ -64,7 +64,7 @@ void MessageSerialization::encode( const Message &msg, std::string &encoded_msg 
       stream << " " << msg.get_arg(i);
     }
 
-    stream << "\n";  // End with a newline character
+    stream << "\n";
 
     encoded_msg = stream.str();
     if (encoded_msg.length() > Message::MAX_ENCODED_LEN) {
@@ -79,27 +79,27 @@ void MessageSerialization::decode( const std::string &encoded_msg_, Message &msg
         throw InvalidMessage("Encoded message does not end with a newline character.");
     }
 
-    msg.clear_args(); // Clear existing arguments
+    msg.clear_args();
 
-    std::istringstream iss(encoded_msg_);
+    std::istringstream ss(encoded_msg_);
     std::string messageTypeStr;
-    iss >> messageTypeStr;
+    ss >> messageTypeStr;
     MessageType type = stringToMessageType(messageTypeStr);
     msg.set_message_type(type);
 
     // Check for the start of a quoted text
-    char nextChar = iss.peek();
-    if (nextChar == ' ') iss.get(); // Skip initial space before the argument
+    char nextChar = ss.peek();
+    if (nextChar == ' ') ss.get(); // Skip space before the argument
 
     // Reading quoted text as a single argument
-    if (iss.peek() == '\"') {
+    if (ss.peek() == '\"') {
         std::string arg;
-        std::getline(iss.ignore(), arg, '\"'); // Ignore the opening quote and read until the next quote
+        std::getline(ss.ignore(), arg, '\"'); // Ignore the opening quote
         msg.push_arg(arg);
-        std::getline(iss, arg); // Consume rest of the line including ending quote and newline
+        std::getline(ss, arg); // Get rest of the line
     } else {
         std::string arg;
-        while (iss >> arg) {
+        while (ss >> arg) {
             msg.push_arg(arg);
         }
     }
