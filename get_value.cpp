@@ -132,7 +132,7 @@ int main(int argc, char **argv)
     std::string value = response.substr(data_pos + 5); // Length of "DATA " is 5
 
     // Print the value
-    std::cout << value;
+    std::cout << value + "\n";
 
     // Send BYE message to terminate connection
     std::string bye_msg = "BYE\n";
