@@ -17,6 +17,7 @@ int main(int argc, char **argv) {
     std::string table = argv[4];
     std::string key = argv[5];
 
+     // TODO: implement
     std::vector<std::string> requests = {
         "LOGIN " + username + "\n",
         "GET " + table + " " + key + "\n",
@@ -37,12 +38,10 @@ int main(int argc, char **argv) {
 
     std::string result;
     for (const auto& req : requests) {
-        // Send request
-        memset(buffer, 0, 1024);  // Clear buffer
+        memset(buffer, 0, 1024);  // clear the buffer
         strcpy(buffer, req.c_str());
         write(clientfd, buffer, req.size());
 
-        // Receive response
         ssize_t bytes_read = read(clientfd, buffer, 1024);
         buffer[bytes_read] = '\0';
         if (bytes_read < 0) {
@@ -52,16 +51,19 @@ int main(int argc, char **argv) {
             return 1;
         }
 
-        // Decode response
+        // decode response
         std::string received_msg(buffer);
         MessageSerialization::decode(received_msg, responseMessage);
+
+        // if ERROR or FAILED print out error
         if (responseMessage.get_message_type() == MessageType::ERROR || responseMessage.get_message_type() == MessageType::FAILED) {
             std::cerr << "Error: " + responseMessage.get_quoted_text() << "\n";
             delete[] buffer;
             close(clientfd);
             return 1;
         }
-
+        
+        // if DATA get value
         if (responseMessage.get_message_type() == MessageType::DATA) {
             result = responseMessage.get_value();
         }
