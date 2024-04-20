@@ -1,9 +1,9 @@
 #include <iostream>
 #include <vector>
-#include "csapp.h"              // For network functionality
-#include "exceptions.h"         // Custom exception classes
-#include "message.h"            // Custom message handling class
-#include "message_serialization.h"  // For encoding and decoding messages
+#include "csapp.h"
+#include "exceptions.h"
+#include "message.h"
+#include "message_serialization.h"
 
 int main(int argc, char **argv) {
     if (argc != 6) {
