@@ -34,9 +34,9 @@ int main(int argc, char **argv) {
         requests.push_back("BEGIN\n");
     }
     requests.push_back("GET " + table + " " + key + "\n");
-    requests.push_back("PUSH 1\n"); // Push 1 onto the stack to be added
-    requests.push_back("ADD\n"); // Add the top two values of the stack
-    requests.push_back("SET " + table + " " + key + "\n"); // Set the result back
+    requests.push_back("PUSH 1\n");
+    requests.push_back("ADD\n");
+    requests.push_back("SET " + table + " " + key + "\n");
     if (use_transaction) {
         requests.push_back("COMMIT\n");
     }
@@ -72,13 +72,8 @@ int main(int argc, char **argv) {
             return 1;
         }
 
-        if (!MessageSerialization::decode(received_msg, responseMessage)) {
-            std::cerr << "Error decoding message\n";
-            delete[] buffer;
-            close(clientfd);
-            return 1;
-        }
-
+        std::string received_msg(buffer);
+        MessageSerialization::decode(received_msg, responseMessage);
         if (responseMessage.get_message_type() == MessageType::ERROR || responseMessage.get_message_type() == MessageType::FAILED) {
             std::cerr << "Error: " + responseMessage.get_quoted_text() << "\n";
             delete[] buffer;
