@@ -27,20 +27,22 @@ int main(int argc, char **argv) {
     std::string table = argv[count++];
     std::string key = argv[count++];
 
-    // TODO: implement
-    std::vector<std::string> requests;
-    requests.push_back("LOGIN " + username + "\n");
+    // implement
+    std::vector<std::string> requests = {
+        "LOGIN " + username + "\n",
+        "PUSH 1\n",
+        "ADD\n",
+        "SET " + table + " " + key + "\n",
+        "BYE\n"
+    };
+
+    // if it runs with transactions add BEGIN and COMMIT
     if (use_transaction) {
-        requests.push_back("BEGIN\n");
+        // insert "BEGIN" at the start, after "LOGIN"
+        requests.insert(requests.begin() + 1, "BEGIN\n");
+        // insert "COMMIT" before "BYE"
+        requests.insert(requests.end() - 1, "COMMIT\n");
     }
-    requests.push_back("GET " + table + " " + key + "\n");
-    requests.push_back("PUSH 1\n");
-    requests.push_back("ADD\n");
-    requests.push_back("SET " + table + " " + key + "\n");
-    if (use_transaction) {
-        requests.push_back("COMMIT\n");
-    }
-    requests.push_back("BYE\n");
 
     char* buffer = new char[1024];
     Message responseMessage;
@@ -84,5 +86,5 @@ int main(int argc, char **argv) {
 
     close(clientfd);
     delete[] buffer;
-    return 0;  // Successful exit without printing any output
+    return 0;
 }

@@ -18,7 +18,7 @@ int main(int argc, char **argv) {
     std::string key = argv[5];
     std::string value = argv[6];
 
-    // TODO: implement
+    // implement
     std::vector<std::string> requests = {
         "LOGIN " + username + "\n",
         "PUSH " + value + "\n",
