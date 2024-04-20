@@ -1,3 +1,10 @@
+/*
+ * A5MS1
+ * The Message Serialization function
+ * Cassie Zhang xzhan304
+ * Tianai Yue tyue4
+ */
+
 #include <utility>
 #include <sstream>
 #include <cassert>

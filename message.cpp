@@ -1,3 +1,10 @@
+/*
+ * A5MS1
+ * The Message class
+ * Cassie Zhang xzhan304
+ * Tianai Yue tyue4
+ */
+
 #include <set>
 #include <map>
 #include <regex>

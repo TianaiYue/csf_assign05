@@ -1,3 +1,10 @@
+/*
+ * A5MS1
+ * The Value Stack class
+ * Cassie Zhang xzhan304
+ * Tianai Yue tyue4
+ */
+
 #include "value_stack.h"
 #include "exceptions.h"
 

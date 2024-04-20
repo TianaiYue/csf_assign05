@@ -1,3 +1,10 @@
+/*
+ * A5MS1
+ * The get_value client
+ * Cassie Zhang xzhan304
+ * Tianai Yue tyue4
+ */
+
 #include <iostream>
 #include <vector>
 #include "csapp.h"

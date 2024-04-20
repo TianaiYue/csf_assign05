@@ -1,3 +1,10 @@
+/*
+ * A5MS1
+ * The Table class header file
+ * Cassie Zhang xzhan304
+ * Tianai Yue tyue4
+ */
+
 #ifndef TABLE_H
 #define TABLE_H
 

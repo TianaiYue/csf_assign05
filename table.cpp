@@ -1,3 +1,10 @@
+/*
+ * A5MS1
+ * The Table class
+ * Cassie Zhang xzhan304
+ * Tianai Yue tyue4
+ */
+
 #include <cassert>
 #include "table.h"
 #include "exceptions.h"
