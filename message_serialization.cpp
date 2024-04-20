@@ -63,14 +63,13 @@ MessageType stringToMessageType(const std::string& typeStr) {
 
 void MessageSerialization::encode( const Message &msg, std::string &encoded_msg )
 {
-  // TODO: implement
+    // implement
     std::ostringstream stream;
     stream << messageTypeToString(msg.get_message_type());
 
     for (unsigned i = 0; i < msg.get_num_args(); i++){
         stream << " " << msg.get_arg(i);
     }
-
     stream << "\n";
 
     encoded_msg = stream.str();
@@ -81,7 +80,7 @@ void MessageSerialization::encode( const Message &msg, std::string &encoded_msg 
 
 void MessageSerialization::decode( const std::string &encoded_msg, Message &msg )
 {
-  // TODO: implement
+    // implement
     if (encoded_msg.empty() || encoded_msg.back() != '\n') {
         throw InvalidMessage("Error: encoded message does not terminate with new line.");
     }
@@ -97,16 +96,15 @@ void MessageSerialization::decode( const std::string &encoded_msg, Message &msg 
     MessageType type = stringToMessageType(messageTypeStr);
     msg.set_message_type(type);
 
-    // Check for the start of a quoted text
+    // Check for start of a quoted text
     char nextChar = ss.peek();
-    if (nextChar == ' ') ss.get(); // Skip space before the argument
+    if (nextChar == ' ') ss.get(); // Skip space before argument
 
-    // Reading quoted text as a single argument
     if (ss.peek() == '\"') {
         std::string arg;
-        std::getline(ss.ignore(), arg, '\"'); // Ignore the opening quote
+        std::getline(ss.ignore(), arg, '\"'); // Ignore opening quote
         msg.push_arg(arg);
-        std::getline(ss, arg); // Get rest of the line
+        std::getline(ss, arg); // Get rest of line
     } else {
         std::string arg;
         while (ss >> arg) {
@@ -115,6 +113,6 @@ void MessageSerialization::decode( const std::string &encoded_msg, Message &msg 
     }
 
     if (!msg.is_valid()) {
-        throw InvalidMessage("Decoded message is invalid according to protocol specifications.");
+        throw InvalidMessage("Decoded message is invalid.");
     }
 }
