@@ -1,3 +1,10 @@
+/*
+ * A5MS1
+ * The Message class
+ * Cassie Zhang xzhan304
+ * Tianai Yue tyue4
+ */
+
 #include <set>
 #include <map>
 #include <regex>
@@ -93,6 +100,11 @@ std::string Message::get_quoted_text() const
 void Message::push_arg( const std::string &arg )
 {
   m_args.push_back( arg );
+}
+
+void Message::clear_args() 
+{
+    m_args.clear();
 }
 
 bool Message::is_valid() const

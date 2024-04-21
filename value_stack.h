@@ -1,3 +1,10 @@
+/*
+ * A5MS1
+ * The Value Stack class header
+ * Cassie Zhang xzhan304
+ * Tianai Yue tyue4
+ */
+
 #ifndef VALUE_STACK_H
 #define VALUE_STACK_H
 
