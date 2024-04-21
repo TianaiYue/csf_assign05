@@ -68,11 +68,11 @@ int main(int argc, char **argv) {
         }
         buffer[bytes_read] = '\0';
 
-        // decode response
+        // Decode response
         std::string received_msg(buffer);
         MessageSerialization::decode(received_msg, responseMessage);
 
-        // if ERROR or FAILED print out error
+        // If ERROR or FAILED print out error
         if (responseMessage.get_message_type() == MessageType::ERROR || responseMessage.get_message_type() == MessageType::FAILED) {
             std::cerr << "Error: " + responseMessage.get_quoted_text() << "\n";
             delete[] buffer;
@@ -80,7 +80,7 @@ int main(int argc, char **argv) {
             return 1;
         }
         
-        // if DATA get value
+        // If DATA get value
         if (responseMessage.get_message_type() == MessageType::DATA) {
             result = responseMessage.get_value();
         }
