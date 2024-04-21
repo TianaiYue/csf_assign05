@@ -24,7 +24,9 @@ int main(int argc, char **argv) {
     std::string table = argv[4];
     std::string key = argv[5];
 
-    // implement
+    // Implement
+    
+    // List of requests to be sent to the server
     std::vector<std::string> requests = {
         "LOGIN " + username + "\n",
         "GET " + table + " " + key + "\n",
@@ -35,10 +37,10 @@ int main(int argc, char **argv) {
     char* buffer = new char[1024];
     Message responseMessage;
 
+    // Open client file descriptor to the server
     int clientfd = open_clientfd(hostname.c_str(), port.c_str());
-
     if (clientfd == -1) {
-        std::cerr << "Error: Failed to connect to server\n";
+        std::cerr << "Error: failed to connect to server\n";
         delete[] buffer;
         return 1;
     }
@@ -47,16 +49,24 @@ int main(int argc, char **argv) {
     for (const auto& req : requests) {
         memset(buffer, 0, 1024);  // clear the buffer
         strcpy(buffer, req.c_str());
-        write(clientfd, buffer, req.size());
 
+        // Send request to the server
+        if (write(clientfd, buffer, strlen(buffer)) < 0) {
+            std::cerr << "Error: unable to write to server\n";
+            delete[] buffer;
+            close(clientfd);
+            return 1;
+        }
+
+        // Read response to buffer
         ssize_t bytes_read = read(clientfd, buffer, 1024);
-        buffer[bytes_read] = '\0';
         if (bytes_read < 0) {
             std::cerr << "Error: unable to reading from server\n";
             delete[] buffer;
             close(clientfd);
             return 1;
         }
+        buffer[bytes_read] = '\0';
 
         // decode response
         std::string received_msg(buffer);

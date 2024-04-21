@@ -34,7 +34,9 @@ int main(int argc, char **argv) {
     std::string table = argv[count++];
     std::string key = argv[count++];
 
-    // implement
+    // Implement
+
+    // List of requests to be sent to the server
     std::vector<std::string> requests = {
         "LOGIN " + username + "\n",
         "PUSH 1\n",
@@ -43,11 +45,9 @@ int main(int argc, char **argv) {
         "BYE\n"
     };
 
-    // if it runs with transactions add BEGIN and COMMIT
+    // If running with transactions add BEGIN and COMMIT
     if (use_transaction) {
-        // insert "BEGIN" at the start, after "LOGIN"
         requests.insert(requests.begin() + 1, "BEGIN\n");
-        // insert "COMMIT" before "BYE"
         requests.insert(requests.end() - 1, "COMMIT\n");
     }
 
@@ -55,8 +55,9 @@ int main(int argc, char **argv) {
     Message responseMessage;
     int clientfd = open_clientfd(hostname.c_str(), port.c_str());
 
+    // Open client file descriptor to the server
     if (clientfd == -1) {
-        std::cerr << "Error: Failed to connect to server\n";
+        std::cerr << "Error: failed to connect to server\n";
         delete[] buffer;
         return 1;
     }
@@ -64,6 +65,8 @@ int main(int argc, char **argv) {
     for (const auto& req : requests) {
         memset(buffer, 0, 1024);  // Clear buffer
         strcpy(buffer, req.c_str());
+
+        // Send request to the server
         if (write(clientfd, buffer, strlen(buffer)) < 0) {
             std::cerr << "Error: unable to write to server\n";
             delete[] buffer;
@@ -71,18 +74,21 @@ int main(int argc, char **argv) {
             return 1;
         }
 
-        // Receive response
+        // Read response to buffer
         ssize_t bytes_read = read(clientfd, buffer, 1024);
-        buffer[bytes_read] = '\0';
         if (bytes_read < 0) {
             std::cerr << "Error: unable to read from server\n";
             delete[] buffer;
             close(clientfd);
             return 1;
         }
+        buffer[bytes_read] = '\0';
 
+        // decode response
         std::string received_msg(buffer);
         MessageSerialization::decode(received_msg, responseMessage);
+
+        // if ERROR or FAILED print out error
         if (responseMessage.get_message_type() == MessageType::ERROR || responseMessage.get_message_type() == MessageType::FAILED) {
             std::cerr << "Error: " + responseMessage.get_quoted_text() << "\n";
             delete[] buffer;
