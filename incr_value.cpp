@@ -23,11 +23,10 @@ int main(int argc, char **argv) {
     std::string table = argv[count++];
     std::string key = argv[count++];
 
-    // Implement
+    // TODO: implement
 
     // List of requests to be sent to the server
     std::vector<std::string> requests;
-    
     requests.push_back("LOGIN " + username + "\n");
     if (use_transaction) {
         requests.push_back("BEGIN\n");
@@ -43,18 +42,19 @@ int main(int argc, char **argv) {
 
     char* buffer = new char[1024];
     Message responseMessage;
-
+  
+    // Open client file descriptor to the server
     int clientfd = open_clientfd(hostname.c_str(), port.c_str());
     if (clientfd == -1) {
         std::cerr << "Error: Failed to connect to server\n";
         delete[] buffer;
         return 1;
     }
-
     for (const auto& req : requests) {
         memset(buffer, 0, 1024);  // Clear buffer
         strcpy(buffer, req.c_str());
 
+        // Send request to the server
         if (write(clientfd, buffer, strlen(buffer)) < 0) {
             std::cerr << "Error: unable to write to server\n";
             delete[] buffer;
@@ -71,9 +71,12 @@ int main(int argc, char **argv) {
             close(clientfd);
             return 1;
         }
-        
+
+        // Decode response
         std::string received_msg(buffer);
         MessageSerialization::decode(received_msg, responseMessage);
+
+        // If ERROR or FAILED print out error
         if (responseMessage.get_message_type() == MessageType::ERROR || responseMessage.get_message_type() == MessageType::FAILED) {
             std::cerr << "Error: " + responseMessage.get_quoted_text() << "\n";
             delete[] buffer;
@@ -84,5 +87,5 @@ int main(int argc, char **argv) {
 
     close(clientfd);
     delete[] buffer;
-    return 0;  // Successful exit without printing any output
+    return 0;
 }
