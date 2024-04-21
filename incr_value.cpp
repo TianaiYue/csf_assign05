@@ -50,15 +50,18 @@ int main(int argc, char **argv) {
         delete[] buffer;
         return 1;
     }
+
     for (const auto& req : requests) {
         memset(buffer, 0, 1024);  // Clear buffer
         strcpy(buffer, req.c_str());
+
         if (write(clientfd, buffer, strlen(buffer)) < 0) {
             std::cerr << "Error: unable to write to server\n";
             delete[] buffer;
             close(clientfd);
             return 1;
         }
+
         // Receive response
         ssize_t bytes_read = read(clientfd, buffer, 1024);
         buffer[bytes_read] = '\0';
@@ -68,6 +71,7 @@ int main(int argc, char **argv) {
             close(clientfd);
             return 1;
         }
+        
         std::string received_msg(buffer);
         MessageSerialization::decode(received_msg, responseMessage);
         if (responseMessage.get_message_type() == MessageType::ERROR || responseMessage.get_message_type() == MessageType::FAILED) {
