@@ -34,7 +34,7 @@ Message::~Message()
 
 Message &Message::operator=( const Message &rhs )
 {
-  // TODO: implement
+  // implement
     if (this != &rhs) {
         m_message_type = rhs.m_message_type;
         m_args = rhs.m_args;
@@ -54,7 +54,7 @@ void Message::set_message_type(MessageType message_type)
 
 std::string Message::get_username() const
 {
-    // TODO: implement
+    // implement
     if (m_message_type == MessageType::LOGIN && !m_args.empty()) {
         return m_args[0];
     }
@@ -63,7 +63,7 @@ std::string Message::get_username() const
 
 std::string Message::get_table() const
 {
-    // TODO: implement
+    // implement
     if ((m_message_type == MessageType::CREATE || m_message_type == MessageType::SET || m_message_type == MessageType::GET) && m_args.size() >= 1) {
         return m_args[0];
     }
@@ -72,7 +72,7 @@ std::string Message::get_table() const
 
 std::string Message::get_key() const
 {
-    // TODO: implement
+    // implement
     if ((m_message_type == MessageType::SET || m_message_type == MessageType::GET) && m_args.size() >= 2) {
         return m_args[1];
     }
@@ -81,7 +81,7 @@ std::string Message::get_key() const
 
 std::string Message::get_value() const
 {
-    // TODO: implement
+    // implement
     if ((m_message_type == MessageType::DATA || m_message_type == MessageType::PUSH) && !m_args.empty()) {
         return m_args[0];
     }
@@ -90,7 +90,7 @@ std::string Message::get_value() const
 
 std::string Message::get_quoted_text() const
 {
-    // TODO: implement
+    // implement
     if ((m_message_type == MessageType::FAILED || m_message_type == MessageType::ERROR) && !m_args.empty()) {
         return m_args[0];
     }
@@ -109,7 +109,7 @@ void Message::clear_args()
 
 bool Message::is_valid() const
 {
-    // TODO: implement
+    // implement
     std::regex identifier_regex("^[a-zA-Z][a-zA-Z0-9_]*$");
     switch (m_message_type) {
         case MessageType::LOGIN:

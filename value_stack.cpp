@@ -9,7 +9,7 @@
 #include "exceptions.h"
 
 ValueStack::ValueStack()
-    // TODO: initialize member variable(s) (if necessary)
+    // initialize member variable(s) (if necessary)
 {
 }
 
@@ -19,19 +19,19 @@ ValueStack::~ValueStack()
 
 bool ValueStack::is_empty() const
 {
-    // TODO: implement
+    // implement
     return stack.empty(); 
 }
 
 void ValueStack::push( const std::string &value )
 {
-    // TODO: implement
+    // implement
     stack.push_back(value); 
 }
 
 std::string ValueStack::get_top() const
 {
-    // TODO: implement
+    // implement
     if (stack.empty()) {
         throw OperationException("Cannot access the top of an empty stack.");
     }
@@ -40,7 +40,7 @@ std::string ValueStack::get_top() const
 
 void ValueStack::pop()
 {
-    // TODO: implement
+    // implement
     if (stack.empty()) {
         throw OperationException("Cannot pop from an empty stack.");
     }
