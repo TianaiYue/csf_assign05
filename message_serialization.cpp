@@ -52,8 +52,7 @@ const std::map<std::string, MessageType> MessageSerialization::stringToTypeMap =
     {"OK", MessageType::OK},
     {"FAILED", MessageType::FAILED},
     {"ERROR", MessageType::ERROR},
-    {"DATA", MessageType::DATA},
-    {"NONE", MessageType::NONE}
+    {"DATA", MessageType::DATA}
 };
 
 std::string MessageSerialization::messageTypeToString(MessageType type) {
