@@ -28,7 +28,7 @@ bool send_and_receive(const std::string& hostname, const std::string& port, cons
     char* buffer = new char[1024];
     Message response_msg;
     int clientfd = open_clientfd(hostname.c_str(), port.c_str());
-
+    // Open client file descriptor to the server
     if (clientfd == -1) {
         std::cerr << "Error: failed to connect to server\n";
         delete[] buffer;
@@ -36,15 +36,16 @@ bool send_and_receive(const std::string& hostname, const std::string& port, cons
     }
 
     for (const auto& req : requests) {
-        memset(buffer, 0, 1024);
+        memset(buffer, 0, 1024); // clear the buffer
         strcpy(buffer, req.c_str());
+        // Send request to the server
         if (write(clientfd, buffer, strlen(buffer)) < 0) {
             std::cerr << "Error: unable to write to server\n";
             delete[] buffer;
             close(clientfd);
             return false;
         }
-
+        // Read response to buffer
         ssize_t bytes_read = read(clientfd, buffer, 1024);
         if (bytes_read < 0) {
             std::cerr << "Error: unable to read from server\n";
@@ -53,9 +54,12 @@ bool send_and_receive(const std::string& hostname, const std::string& port, cons
             return false;
         }
         buffer[bytes_read] = '\0';
+
+        // Decode response
         std::string received_msg(buffer);
         MessageSerialization::decode(received_msg, response_msg);
-
+        
+        // If DATA get value
         if (response_msg.get_message_type() == MessageType::ERROR || response_msg.get_message_type() == MessageType::FAILED) {
             std::cerr << "Error: " + response_msg.get_quoted_text() << "\n";
             delete[] buffer;
@@ -67,7 +71,6 @@ bool send_and_receive(const std::string& hostname, const std::string& port, cons
             result = response_msg.get_value();
         }
     }
-
     close(clientfd);
     delete[] buffer;
     return true;
@@ -95,6 +98,9 @@ int main(int argc, char **argv) {
     std::string table = argv[4];
     std::string key = argv[5];
 
+    // Implement
+
+    // List of requests to be sent to the server
     std::vector<std::string> requests = {
         "LOGIN " + username + "\n",
         "GET " + table + " " + key + "\n",
