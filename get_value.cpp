@@ -26,7 +26,7 @@
  */
 bool send_and_receive(const std::string& hostname, const std::string& port, const std::vector<std::string>& requests, std::string& result) {
     char* buffer = new char[1024];
-    Message responseMessage;
+    Message response_msg;
     int clientfd = open_clientfd(hostname.c_str(), port.c_str());
 
     if (clientfd == -1) {
@@ -54,17 +54,17 @@ bool send_and_receive(const std::string& hostname, const std::string& port, cons
         }
         buffer[bytes_read] = '\0';
         std::string received_msg(buffer);
-        MessageSerialization::decode(received_msg, responseMessage);
+        MessageSerialization::decode(received_msg, response_msg);
 
-        if (responseMessage.get_message_type() == MessageType::ERROR || responseMessage.get_message_type() == MessageType::FAILED) {
-            std::cerr << "Error: " + responseMessage.get_quoted_text() << "\n";
+        if (response_msg.get_message_type() == MessageType::ERROR || response_msg.get_message_type() == MessageType::FAILED) {
+            std::cerr << "Error: " + response_msg.get_quoted_text() << "\n";
             delete[] buffer;
             close(clientfd);
             return false;
         }
 
-        if (responseMessage.get_message_type() == MessageType::DATA) {
-            result = responseMessage.get_value();
+        if (response_msg.get_message_type() == MessageType::DATA) {
+            result = response_msg.get_value();
         }
     }
 
