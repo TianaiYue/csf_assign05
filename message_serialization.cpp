@@ -9,57 +9,67 @@
 #include <sstream>
 #include <cassert>
 #include <map>
+#include <string>
 #include "exceptions.h"
 #include "message_serialization.h"
 
-std::string messageTypeToString(MessageType type) {
-    switch (type) {
-        case MessageType::LOGIN: return "LOGIN";
-        case MessageType::CREATE: return "CREATE";
-        case MessageType::PUSH: return "PUSH";
-        case MessageType::POP: return "POP";
-        case MessageType::TOP: return "TOP";
-        case MessageType::SET: return "SET";
-        case MessageType::GET: return "GET";
-        case MessageType::ADD: return "ADD";
-        case MessageType::SUB: return "SUB";
-        case MessageType::MUL: return "MUL";
-        case MessageType::DIV: return "DIV";
-        case MessageType::BEGIN: return "BEGIN";
-        case MessageType::COMMIT: return "COMMIT";
-        case MessageType::BYE: return "BYE";
-        case MessageType::OK: return "OK";
-        case MessageType::FAILED: return "FAILED";
-        case MessageType::ERROR: return "ERROR";
-        case MessageType::DATA: return "DATA";
-        case MessageType::NONE: return "NONE";
-        default: return "UNKNOWN";
+const std::map<MessageType, std::string> MessageSerialization::typeToStringMap = {
+    {MessageType::LOGIN, "LOGIN"},
+    {MessageType::CREATE, "CREATE"},
+    {MessageType::PUSH, "PUSH"},
+    {MessageType::POP, "POP"},
+    {MessageType::TOP, "TOP"},
+    {MessageType::SET, "SET"},
+    {MessageType::GET, "GET"},
+    {MessageType::ADD, "ADD"},
+    {MessageType::SUB, "SUB"},
+    {MessageType::MUL, "MUL"},
+    {MessageType::DIV, "DIV"},
+    {MessageType::BEGIN, "BEGIN"},
+    {MessageType::COMMIT, "COMMIT"},
+    {MessageType::BYE, "BYE"},
+    {MessageType::OK, "OK"},
+    {MessageType::FAILED, "FAILED"},
+    {MessageType::ERROR, "ERROR"},
+    {MessageType::DATA, "DATA"}
+};
+
+const std::map<std::string, MessageType> MessageSerialization::stringToTypeMap = {
+    {"LOGIN", MessageType::LOGIN},
+    {"CREATE", MessageType::CREATE},
+    {"PUSH", MessageType::PUSH},
+    {"POP", MessageType::POP},
+    {"TOP", MessageType::TOP},
+    {"SET", MessageType::SET},
+    {"GET", MessageType::GET},
+    {"ADD", MessageType::ADD},
+    {"SUB", MessageType::SUB},
+    {"MUL", MessageType::MUL},
+    {"DIV", MessageType::DIV},
+    {"BEGIN", MessageType::BEGIN},
+    {"COMMIT", MessageType::COMMIT},
+    {"BYE", MessageType::BYE},
+    {"OK", MessageType::OK},
+    {"FAILED", MessageType::FAILED},
+    {"ERROR", MessageType::ERROR},
+    {"DATA", MessageType::DATA}
+};
+
+std::string MessageSerialization::messageTypeToString(MessageType type) {
+    auto it = typeToStringMap.find(type);
+    if (it != typeToStringMap.end()) {
+        return it->second;
     }
+    return "NONE";
 }
 
-MessageType stringToMessageType(const std::string& typeStr) {
-    if (typeStr == "LOGIN") return MessageType::LOGIN;
-    if (typeStr == "CREATE") return MessageType::CREATE;
-    if (typeStr == "PUSH") return MessageType::PUSH;
-    if (typeStr == "POP") return MessageType::POP;
-    if (typeStr == "TOP") return MessageType::TOP;
-    if (typeStr == "SET") return MessageType::SET;
-    if (typeStr == "GET") return MessageType::GET;
-    if (typeStr == "ADD") return MessageType::ADD;
-    if (typeStr == "SUB") return MessageType::SUB;
-    if (typeStr == "MUL") return MessageType::MUL;
-    if (typeStr == "DIV") return MessageType::DIV;
-    if (typeStr == "BEGIN") return MessageType::BEGIN;
-    if (typeStr == "COMMIT") return MessageType::COMMIT;
-    if (typeStr == "BYE") return MessageType::BYE;
-    if (typeStr == "OK") return MessageType::OK;
-    if (typeStr == "FAILED") return MessageType::FAILED;
-    if (typeStr == "ERROR") return MessageType::ERROR;
-    if (typeStr == "DATA") return MessageType::DATA;
-    if (typeStr == "NONE") return MessageType::NONE;
+MessageType MessageSerialization::stringToMessageType(const std::string& typeStr) {
+    auto it = stringToTypeMap.find(typeStr);
+    if (it != stringToTypeMap.end()) {
+        return it->second;
+    }
     return MessageType::NONE;
 }
-
 
 void MessageSerialization::encode( const Message &msg, std::string &encoded_msg )
 {
@@ -97,8 +107,9 @@ void MessageSerialization::decode( const std::string &encoded_msg, Message &msg 
     msg.set_message_type(type);
 
     // Check for start of a quoted text
-    char nextChar = ss.peek();
-    if (nextChar == ' ') ss.get(); // Skip space before argument
+    if (ss.peek() == ' ') {
+        ss.get(); // Skip space before argument
+    }
 
     if (ss.peek() == '\"') {
         std::string arg;

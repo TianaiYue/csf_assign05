@@ -23,7 +23,7 @@ int main(int argc, char **argv) {
     std::string table = argv[count++];
     std::string key = argv[count++];
 
-    // TODO: implement
+    // Implement
 
     // List of requests to be sent to the server
     std::vector<std::string> requests;
