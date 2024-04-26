@@ -25,6 +25,11 @@ public:
   void chat_with_client();
 
   // TODO: additional member functions
+  Message read_message();
+  void handle_request(const Message& request);
+  void send_message(const Message& msg);
+  void close_connection();
+
 };
 
 #endif // CLIENT_CONNECTION_H

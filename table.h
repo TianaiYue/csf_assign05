@@ -26,6 +26,7 @@ private:
 public:
   Table( const std::string &name );
   ~Table();
+  Table() : m_name("default"), m_mutex(PTHREAD_MUTEX_INITIALIZER) { }
 
   std::string get_name() const { return m_name; }
 
