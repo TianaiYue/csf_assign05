@@ -45,8 +45,9 @@ public:
   void handle_exception(const std::exception& e);
   void handle_arithmetic_request(const Message &request);
   void handle_bye_request();
-  void rollback_transaction();
+
   bool is_valid_username(const std::string& username);
+  void rollback_transaction();
 };
 
 #endif // CLIENT_CONNECTION_H

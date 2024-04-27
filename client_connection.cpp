@@ -30,19 +30,21 @@ ClientConnection::~ClientConnection()
 
 void ClientConnection::chat_with_client() {
     try {
-            Message request;
-            while ((request = read_message()), request.get_message_type() != MessageType::BYE) {
-                if (!first_request_handled && request.get_message_type() != MessageType::LOGIN) {
-                    throw InvalidMessage("First request must be LOGIN");
-                }
-                handle_request(request);
-                first_request_handled = true;
-            }
-            handle_bye_request();
-        } catch (const std::exception &e) {
-            handle_exception(e);
+        Message request;
+        while ((request = read_message()), request.get_message_type() != MessageType::BYE) {
+            handle_request(request);
+        }
+        handle_bye_request();
+    } catch (const CommException& e) {
+        std::cerr << "Communication exception: " << e.what() << std::endl;
+        // Handle communication-specific errors, possibly recover
+        close_connection();
+    } catch (const std::exception& e) {
+        std::cerr << "General exception: " << e.what() << std::endl;
+        handle_exception(e);
     }
 }
+
 
 // TODO: additional member functions
 Message ClientConnection::read_message() {
@@ -66,17 +68,20 @@ Message ClientConnection::read_message() {
 void ClientConnection::send_message(const Message& msg) {
     std::string encoded_msg;
     MessageSerialization::encode(msg, encoded_msg);
-    if (rio_writen(m_client_fd, encoded_msg.c_str(), encoded_msg.length()) < 0) {
-        throw CommException("Failed to send message to client");
+    try {
+        if (rio_writen(m_client_fd, encoded_msg.c_str(), encoded_msg.length()) < 0) {
+            std::cerr << "Failed to send message to client. FD: " << m_client_fd << std::endl;
+            throw CommException("Failed to send message to client");
+        }
+    } catch (const CommException& e) {
+        // Optionally log the exception or handle it in other ways
+        std::cerr << "Communication error occurred: " << e.what() << std::endl;
+        // Decide whether to close the connection or attempt recovery
+        close_connection();
     }
 }
 
 void ClientConnection::handle_request(const Message& request) {
-    if (!first_request_handled && request.get_message_type() != MessageType::LOGIN) {
-            send_message(Message(MessageType::ERROR, {"First request must be LOGIN"}));
-            close_connection();
-            return;
-    }
     try {
         if (!request.is_valid()) {
             throw InvalidMessage("Invalid message format");
@@ -124,16 +129,16 @@ void ClientConnection::handle_request(const Message& request) {
         }
     } catch (const InvalidMessage& e) {
         send_message(Message(MessageType::ERROR, {e.what()}));
-        close_connection();
+        close_connection(); // ERROR should close the session
     } catch (const OperationException& e) {
-        send_message(Message(MessageType::FAILED, {e.what()}));
+        send_message(Message(MessageType::FAILED, {e.what()})); // FAILED does not end the session
     } catch (const FailedTransaction& e) {
-        send_message(Message(MessageType::FAILED, {e.what()}));
-        // Optional: rollback any transaction if necessary
+        send_message(Message(MessageType::FAILED, {e.what()})); // Likewise, FAILED does not end the session
     } catch (const CommException& e) {
+        // Communication errors should generally close the connection
         send_message(Message(MessageType::ERROR, {"Communication failure"}));
         close_connection();
-    } 
+    }
 }
 
 void ClientConnection::handle_login_request(const Message& request) {
@@ -184,17 +189,9 @@ void ClientConnection::handle_commit_request() {
 }
 
 void ClientConnection::handle_set_request(const Message& request) {
-    const std::string table_name = request.get_table();
-    const std::string key_name = request.get_key();
-
-    Table* table = m_server->find_table(table_name);
+    Table* table = m_server->find_table(request.get_table());
     if (!table) {
         send_message(Message(MessageType::ERROR, {"Unknown table"}));
-        return;
-    }
-
-    if (key_name.empty()) {
-        send_message(Message(MessageType::ERROR, {"Invalid key name"}));
         return;
     }
     
@@ -208,12 +205,12 @@ void ClientConnection::handle_set_request(const Message& request) {
 
     table->lock();
     try {
-        table->set(key_name, value);
+        table->set(request.get_key(), value);
         table->unlock();
         send_message(Message(MessageType::OK));
     } catch (const std::exception& e) {
         table->unlock();
-        send_message(Message(MessageType::FAILED, {"Failed to set value: " + std::string(e.what())}));
+        send_message(Message(MessageType::FAILED, {e.what()}));
     }
 }
 
@@ -249,32 +246,47 @@ void ClientConnection::handle_pop_request() {
 
 void ClientConnection::handle_top_request() {
     if (stack.is_empty()) {
-        send_message(Message(MessageType::ERROR, {"Stack is empty"}));
+        send_message(Message(MessageType::FAILED, {"Stack is empty"})); // Not ERROR because the session can continue
     } else {
-        Message response(MessageType::DATA, {stack.get_top()});
-        send_message(response);
+        std::string topValue = stack.get_top();
+        send_message(Message(MessageType::DATA, {topValue})); // DATA response for successful retrieval
     }
 }
 
 
+
 void ClientConnection::handle_arithmetic_request(const Message& request) {
     try {
-        // Attempt to pop twice. If stack is underflowed, an exception should be thrown.
-        int right = std::stoi(stack.get_top());
-        stack.pop();
-        int left = std::stoi(stack.get_top());
+        // Attempt to pop twice. This assumes stack throws an exception if underflow occurs.
+        int right, left;
+
+        if (stack.is_empty()) {  // Check for at least one operand
+            send_message(Message(MessageType::ERROR, {"Insufficient operands"}));
+            return;
+        }
+
+        right = std::stoi(stack.get_top());
         stack.pop();
 
-        int result;
+        if (stack.is_empty()) {  // Check for the second operand after popping the first
+            send_message(Message(MessageType::ERROR, {"Insufficient operands"}));
+            return;
+        }
+
+        left = std::stoi(stack.get_top());
+        stack.pop();
+
+        // Perform arithmetic operations
+        int result = 0;
         switch (request.get_message_type()) {
             case MessageType::ADD:
                 result = left + right;
                 break;
-            case MessageType::MUL:
-                result = left * right;
-                break;
             case MessageType::SUB:
                 result = left - right;
+                break;
+            case MessageType::MUL:
+                result = left * right;
                 break;
             case MessageType::DIV:
                 if (right == 0) {
@@ -288,9 +300,11 @@ void ClientConnection::handle_arithmetic_request(const Message& request) {
                 return;
         }
         send_message(Message(MessageType::DATA, {std::to_string(result)}));
+    } catch (const std::invalid_argument& e) {
+        send_message(Message(MessageType::FAILED, {"Non-numeric operand"}));
     } catch (const std::exception& e) {
-        // This catch block assumes your stack throws std::exception on errors like underflow.
         send_message(Message(MessageType::ERROR, {e.what()}));
+        close_connection();
     }
 }
 
@@ -301,17 +315,17 @@ void ClientConnection::handle_bye_request() {
 }
             
 void ClientConnection::handle_exception(const std::exception& e) {
+    // Log the error
+    std::cerr << "Error during client communication: " << e.what() << std::endl;
+
     if (dynamic_cast<const OperationException*>(&e) || dynamic_cast<const FailedTransaction*>(&e)) {
-        // Log error but continue session
-        std::cerr << "Recoverable error: " << e.what() << std::endl;
         send_message(Message(MessageType::FAILED, {e.what()}));
     } else {
-        // Log error and terminate session
-        std::cerr << "Unrecoverable error: " << e.what() << std::endl;
         send_message(Message(MessageType::ERROR, {e.what()}));
         close_connection();
     }
 }
+
 
 void ClientConnection::rollback_transaction() {
     m_server->rollback_transaction(m_client_fd);

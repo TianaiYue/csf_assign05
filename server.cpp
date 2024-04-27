@@ -149,16 +149,32 @@ void Server::commit_transaction(int client_id) {
 void Server::rollback_transaction(int client_id) {
     Guard guard(mutex);
 
-    if (is_transaction_active(client_id)) {
-        for (const auto &table_name : transaction_locks[client_id]) {
+    if (!is_transaction_active(client_id)) {
+        // Optionally log that we tried to roll back an inactive transaction
+        return;
+    }
+
+    bool errorOccurred = false;
+    for (const auto &table_name : transaction_locks[client_id]) {
+        try {
             Table *table = find_table(table_name);
             if (table) {
                 table->rollback_changes();
                 table->unlock();
             }
+        } catch (const std::exception& e) {
+            // Log the error
+            std::cerr << "Error during rollback of table " << table_name << ": " << e.what() << std::endl;
+            errorOccurred = true;
         }
-        in_transaction[client_id] = false;
-        transaction_locks.erase(client_id);
+    }
+
+    in_transaction[client_id] = false;
+    transaction_locks.erase(client_id);
+
+    if (errorOccurred) {
+        // Handle or log the fact that there was an error during rollback
+        std::cerr << "One or more errors occurred during the rollback process for client " << client_id << std::endl;
     }
 }
 
@@ -186,5 +202,3 @@ bool Server::is_transaction_active(int client_id) {
     Guard guard(mutex);
     return in_transaction.find(client_id) != in_transaction.end() && in_transaction[client_id];
 }
-
-
