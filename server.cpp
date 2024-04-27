@@ -13,15 +13,12 @@
 #include "guard.h"
 #include "server.h"
 
-// Server::Server()
-//   // TODO: initialize member variables
-// {
-//   // TODO: implement
-// }
-
-Server::Server() {
-    listenfd = -1;
-}
+Server::Server() 
+    // TODO: initialize member variables
+    {
+        // TODO: implement
+        listenfd = -1;
+    }
 
 Server::~Server()
 {

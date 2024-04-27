@@ -316,9 +316,10 @@ void ClientConnection::handle_arithmetic_request(const Message& request) {
                 send_message(Message(MessageType::ERROR, {"Unsupported arithmetic operation"}));
                 return;
         }
-        send_message(Message(MessageType::DATA, {std::to_string(result)}));
-    } catch (const std::invalid_argument& e) {
-        send_message(Message(MessageType::FAILED, {"Non-numeric operand"}));
+        stack.push(std::to_string(result));
+        send_message(Message(MessageType::OK));
+    } catch (const std::invalid_argument& ) {
+        send_message(Message(MessageType::ERROR, {"Non-numeric operand"}));
     } catch (const std::exception& e) {
         send_message(Message(MessageType::ERROR, {e.what()}));
         close_connection();
