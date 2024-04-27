@@ -30,14 +30,19 @@ ClientConnection::~ClientConnection()
 
 void ClientConnection::chat_with_client() {
     try {
-        Message request;
+        Message request = read_message();
+        if (request.get_message_type() != MessageType::LOGIN) {
+            send_message(Message(MessageType::ERROR, {"First request must be LOGIN"}));
+            close_connection();
+            return;
+        }
+        handle_login_request(request);
         while ((request = read_message()), request.get_message_type() != MessageType::BYE) {
             handle_request(request);
         }
         handle_bye_request();
     } catch (const CommException& e) {
         std::cerr << "Communication exception: " << e.what() << std::endl;
-        // Handle communication-specific errors, possibly recover
         close_connection();
     } catch (const std::exception& e) {
         std::cerr << "General exception: " << e.what() << std::endl;
@@ -82,6 +87,10 @@ void ClientConnection::send_message(const Message& msg) {
 }
 
 void ClientConnection::handle_request(const Message& request) {
+    if (request.get_message_type() == MessageType::LOGIN) {
+        std::cerr << "Unexpected LOGIN message received after initial login." << std::endl;
+        return;
+    }
     try {
         if (!request.is_valid()) {
             throw InvalidMessage("Invalid message format");
