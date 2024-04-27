@@ -15,7 +15,6 @@ private:
   int m_client_fd;
   rio_t m_fdbuf;
   ValueStack stack;
-  bool first_request_handled = false;
 
   // copy constructor and assignment operator are prohibited
   ClientConnection( const ClientConnection & );
@@ -45,8 +44,8 @@ public:
   void handle_exception(const std::exception& e);
   void handle_arithmetic_request(const Message &request);
   void handle_bye_request();
+
   void rollback_transaction();
-  bool is_valid_username(const std::string& username);
 };
 
 #endif // CLIENT_CONNECTION_H

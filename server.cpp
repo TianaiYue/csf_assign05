@@ -202,5 +202,3 @@ bool Server::is_transaction_active(int client_id) {
     Guard guard(mutex);
     return in_transaction.find(client_id) != in_transaction.end() && in_transaction[client_id];
 }
-
-
