@@ -20,24 +20,26 @@
 // }
 
 Server::Server() {
-    pthread_mutex_init(&mutex, nullptr);
+    listenfd = -1;
 }
 
 Server::~Server()
 {
     // TODO: implement
-    running = false;
-    Close(listenfd);
-    pthread_mutex_destroy(&mutex);
+    close(listenfd);
+    for (auto &pair : tables) {
+        delete pair.second;
+    }
+    tables.clear();
 }
 
 void Server::listen( const std::string &port )
 {
   // TODO: implement
-  listenfd = open_listenfd(port.c_str());
+    listenfd = Open_listenfd(port.c_str());
     if (listenfd < 0) {
-        log_error("Failed to listen on port: " + port);
-        exit(1);
+        log_error("Failed to open listen socket");
+        throw std::runtime_error("Failed to open listen socket");
     }
 }
 
@@ -53,29 +55,23 @@ void Server::server_loop()
   if ( pthread_create( &thr_id, nullptr, client_worker, client ) != 0 )
     log_error( "Could not create client thread" );
 */
-    std::cout << "Server is running and waiting for connections..." << std::endl;
-    sockaddr_storage clientaddr;
-    socklen_t clientlen = sizeof(sockaddr_storage);
-    pthread_t tid;
-
-    while (running) {
-        int clientfd = accept(listenfd, (sockaddr *)&clientaddr, &clientlen);
-        if (clientfd < 0) {
+    while (true) {
+        int client_fd = Accept(listenfd, nullptr, nullptr);
+        if (client_fd < 0) {
             log_error("Failed to accept client connection");
             continue;
         }
 
-        auto clientConn = new ClientConnection(this, clientfd);
-        pthread_t client_thread;
-        if (pthread_create(&client_thread, nullptr, client_worker, clientConn) != 0) {
+        ClientConnection *client = new ClientConnection(this, client_fd);
+        pthread_t thr_id;
+        if (pthread_create(&thr_id, nullptr, client_worker, client) != 0) {
             log_error("Could not create client thread");
-            delete clientConn;
+            delete client;
         } else {
-            pthread_detach(client_thread);
+            pthread_detach(thr_id);
         }
     }
 }
-
 
 void *Server::client_worker( void *arg )
 {
@@ -89,9 +85,13 @@ void *Server::client_worker( void *arg )
   client->chat_with_client();
   return nullptr;
 */
-    auto client = static_cast<ClientConnection *>(arg);
-    client->chat_with_client();
-    delete client;
+    std::unique_ptr<ClientConnection> client(static_cast<ClientConnection *>(arg));
+    try {
+        client->chat_with_client();
+    } catch (const std::exception &e) {
+        std::cerr << "Error communicating with client: " << e.what() << std::endl;
+        client->send_message(MessageType::ERROR);
+    }
     return nullptr;
 }
 
@@ -101,24 +101,28 @@ void Server::log_error( const std::string &what )
 }
 
 // TODO: implement member functions
-bool Server::create_table(const std::string &name) {
+void Server::create_table(const std::string &name) {
     Guard guard(mutex);
-    if (tables.find(name) == tables.end()) {
-        tables.emplace(std::piecewise_construct,
-                       std::forward_as_tuple(name),
-                       std::forward_as_tuple(name));
-        return true;
+
+    if (tables.find(name) != tables.end()) {
+        throw OperationException("Table already exists");
     }
-    return false;
+
+    // Create a new table and add it to the map
+    Table *new_table = new Table(name);
+    tables[name] = new_table;
 }
+
 
 Table* Server::find_table(const std::string &name) {
     Guard guard(mutex);
     auto it = tables.find(name);
+
     if (it != tables.end()) {
-        return &it->second;
+        return it->second;
+    } else {
+        throw OperationException("Table not found");
     }
-    return nullptr;
 }
 
 void Server::begin_transaction(int client_id) {
@@ -130,37 +134,40 @@ void Server::begin_transaction(int client_id) {
 void Server::commit_transaction(int client_id) {
     pthread_mutex_lock(&mutex);
     if (in_transaction[client_id]) {
-        for (const auto& table_name : transaction_locks[client_id]) {
-            tables[table_name].commit_changes();
-            unlock_table(table_name, client_id);
+        for (const auto &table_name : transaction_locks[client_id]) {
+            auto it = tables.find(table_name);
+            if (it != tables.end()) {
+                it->second->commit_changes();
+                unlock_table(table_name, client_id);
+            }
         }
-        in_transaction[client_id] = false;
     }
+    in_transaction[client_id] = false;
     pthread_mutex_unlock(&mutex);
 }
 
 void Server::rollback_transaction(int client_id) {
     Guard guard(mutex);
-    // Assume there is a map called transaction_locks that keeps track of all the tables a client has locked
+
     if (is_transaction_active(client_id)) {
-        for (const auto& table_name : transaction_locks[client_id]) {
-            Table* table = find_table(table_name);
+        for (const auto &table_name : transaction_locks[client_id]) {
+            Table *table = find_table(table_name);
             if (table) {
                 table->rollback_changes();
                 table->unlock();
             }
         }
         in_transaction[client_id] = false;
-        transaction_locks.erase(client_id); // Clear all locks related to this transaction
+        transaction_locks.erase(client_id);
     }
 }
 
 bool Server::lock_table(const std::string& table_name, int client_id) {
     auto it = tables.find(table_name);
     if (it == tables.end()) {
-        return false; 
+        return false;
     }
-    if (it->second.trylock()) {
+    if (it->second->trylock()) {
         transaction_locks[client_id].insert(table_name);
         return true;
     }
@@ -170,14 +177,13 @@ bool Server::lock_table(const std::string& table_name, int client_id) {
 void Server::unlock_table(const std::string& table_name, int client_id) {
     auto it = tables.find(table_name);
     if (it != tables.end() && transaction_locks[client_id].find(table_name) != transaction_locks[client_id].end()) {
-        it->second.unlock();
+        it->second->unlock();
         transaction_locks[client_id].erase(table_name);
     }
 }
 
 bool Server::is_transaction_active(int client_id) {
-    Guard guard(mutex); // Assuming you have a Guard class that handles locking
-    // Check if there is an active transaction for the given client ID
+    Guard guard(mutex);
     return in_transaction.find(client_id) != in_transaction.end() && in_transaction[client_id];
 }
 

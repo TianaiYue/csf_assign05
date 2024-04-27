@@ -745,7 +745,7 @@ server.o: server.cpp /usr/include/stdc-predef.h \
  /usr/include/c++/13/bits/stl_multiset.h message.h \
  /usr/include/c++/13/vector /usr/include/c++/13/bits/stl_vector.h \
  /usr/include/c++/13/bits/stl_bvector.h \
- /usr/include/c++/13/bits/vector.tcc
+ /usr/include/c++/13/bits/vector.tcc value_stack.h
 client_connection.o: client_connection.cpp /usr/include/stdc-predef.h \
  /usr/include/c++/13/iostream /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/c++/13/x86_64-redhat-linux/bits/c++config.h \
@@ -952,7 +952,7 @@ client_connection.o: client_connection.cpp /usr/include/stdc-predef.h \
  /usr/include/c++/13/bits/stl_multimap.h \
  /usr/include/c++/13/bits/erase_if.h server.h table.h client_connection.h \
  /usr/include/c++/13/set /usr/include/c++/13/bits/stl_set.h \
- /usr/include/c++/13/bits/stl_multiset.h exceptions.h
+ /usr/include/c++/13/bits/stl_multiset.h value_stack.h exceptions.h
 server_main.o: server_main.cpp /usr/include/stdc-predef.h \
  /usr/include/c++/13/iostream /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/c++/13/x86_64-redhat-linux/bits/c++config.h \
@@ -1158,7 +1158,7 @@ server_main.o: server_main.cpp /usr/include/stdc-predef.h \
  /usr/include/bits/types/struct_osockaddr.h /usr/include/netdb.h \
  /usr/include/netinet/in.h /usr/include/bits/stdint-uintn.h \
  /usr/include/bits/in.h /usr/include/rpc/netdb.h \
- /usr/include/bits/netdb.h /usr/include/arpa/inet.h
+ /usr/include/bits/netdb.h /usr/include/arpa/inet.h value_stack.h
 get_value.o: get_value.cpp /usr/include/stdc-predef.h \
  /usr/include/c++/13/iostream /usr/include/c++/13/bits/requires_hosted.h \
  /usr/include/c++/13/x86_64-redhat-linux/bits/c++config.h \

@@ -12,9 +12,8 @@ class Server {
 private:
   // TODO: add member variables
   int listenfd;
-  std::map<std::string, Table> tables;
-  pthread_mutex_t mutex;
-  bool running;
+  std::map<std::string, Table*> tables;
+  pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
   // copy constructor and assignment operator are prohibited
   Server(const Server&);
@@ -35,14 +34,14 @@ public:
   void log_error( const std::string &what );
 
   // TODO: add member functions
-  bool create_table(const std::string &name);
-  Table* find_table(const std::string &name);
-  void begin_transaction(int client_id);
-  void commit_transaction(int client_id);
-  void rollback_transaction(int client_id);
-  bool lock_table(const std::string& table_name, int client_id);
-  void unlock_table(const std::string& table_name, int client_id);
-  bool is_transaction_active(int client_id);
+  void create_table(const std::string &name);
+    Table* find_table(const std::string &name);
+    void begin_transaction(int client_id);
+    void commit_transaction(int client_id);
+    void rollback_transaction(int client_id);
+    bool lock_table(const std::string& table_name, int client_id);
+    void unlock_table(const std::string& table_name, int client_id);
+    bool is_transaction_active(int client_id);
 
   // Some suggested member functions:
 /*
