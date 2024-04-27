@@ -50,7 +50,6 @@ void ClientConnection::chat_with_client() {
     }
 }
 
-
 // TODO: additional member functions
 Message ClientConnection::read_message() {
     char buf[Message::MAX_ENCODED_LEN];
@@ -155,10 +154,8 @@ void ClientConnection::handle_login_request(const Message& request) {
     if (username.empty()) {
         throw InvalidMessage("Invalid login format");
     }
-    if (username.empty() || !is_valid_username(username)) {
-        send_message(Message(MessageType::ERROR, {"Invalid username"}));
-        close_connection();
-        return;
+    if (!is_valid_username(username)) {
+        throw InvalidMessage("Invalid username");
     }
     send_message(Message(MessageType::OK));
 }
@@ -183,7 +180,7 @@ void ClientConnection::handle_create_request(const Message& request) {
         m_server->create_table(table_name);
         send_message(Message(MessageType::OK));
     } catch (const OperationException& e) {
-        send_message(Message(MessageType::FAILED, {e.what()}));
+        throw OperationException(e.what());
     }
 }
 
@@ -199,22 +196,19 @@ void ClientConnection::handle_commit_request() {
 
 void ClientConnection::handle_set_request(const Message& request) {
     Table* table = m_server->find_table(request.get_table());
-    
+
     std::string table_name = request.get_table();
     std::string key_name = request.get_key();
     if (!is_valid_username(table_name) || !is_valid_username(key_name)) {
-        send_message(Message(MessageType::ERROR, {"Invalid table or key name"}));
-        return;
+        throw InvalidMessage("Invalid table or key name");
     }
 
     if (!table) {
-        send_message(Message(MessageType::ERROR, {"Unknown table"}));
-        return;
+        throw FailedTransaction("Unknown table");
     }
-    
+
     if (stack.is_empty()) {
-        send_message(Message(MessageType::FAILED, {"Stack is empty"}));
-        return;
+        throw OperationException("Stack is empty");
     }
 
     std::string value = stack.get_top();
@@ -227,15 +221,14 @@ void ClientConnection::handle_set_request(const Message& request) {
         send_message(Message(MessageType::OK));
     } catch (const std::exception& e) {
         table->unlock();
-        send_message(Message(MessageType::FAILED, {e.what()}));
+        throw FailedTransaction(e.what());
     }
 }
 
 void ClientConnection::handle_get_request(const Message& request) {
     Table* table = m_server->find_table(request.get_table());
     if (!table) {
-        send_message(Message(MessageType::ERROR, {"Unknown table"}));
-        return;
+        throw OperationException("Unknown table");
     }
 
     table->lock();
@@ -246,10 +239,9 @@ void ClientConnection::handle_get_request(const Message& request) {
         send_message(Message(MessageType::OK));
     } catch (const std::exception& e) {
         table->unlock();
-        send_message(Message(MessageType::FAILED, {e.what()}));
+        throw FailedTransaction(e.what());
     }
 }
-
 
 void ClientConnection::handle_push_request(const Message& request) {
     stack.push(request.get_arg(0));
@@ -263,14 +255,12 @@ void ClientConnection::handle_pop_request() {
 
 void ClientConnection::handle_top_request() {
     if (stack.is_empty()) {
-        send_message(Message(MessageType::FAILED, {"Stack is empty"})); // Not ERROR because the session can continue
+        throw OperationException("Stack is empty");
     } else {
         std::string topValue = stack.get_top();
-        send_message(Message(MessageType::DATA, {topValue})); // DATA response for successful retrieval
+        send_message(Message(MessageType::DATA, {topValue})); // Send DATA response for successful retrieval
     }
 }
-
-
 
 void ClientConnection::handle_arithmetic_request(const Message& request) {
         // Attempt to pop twice. This assumes stack throws an exception if underflow occurs.
