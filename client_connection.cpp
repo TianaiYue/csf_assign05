@@ -273,24 +273,28 @@ void ClientConnection::handle_top_request() {
 
 
 void ClientConnection::handle_arithmetic_request(const Message& request) {
-    try {
         // Attempt to pop twice. This assumes stack throws an exception if underflow occurs.
         int right, left;
 
-        if (stack.is_empty()) {  // Check for at least one operand
-            send_message(Message(MessageType::ERROR, {"Insufficient operands"}));
-            return;
+        if (stack.is_empty()) {
+            throw OperationException("Insufficient operands");
         }
 
-        right = std::stoi(stack.get_top());
+        try {
+            right = std::stoi(stack.get_top());
+        } catch (const std::invalid_argument&) { // Catch std::invalid_argument
+            throw OperationException("non-numeric operands");
+        }
         stack.pop();
 
-        if (stack.is_empty()) {  // Check for the second operand after popping the first
-            send_message(Message(MessageType::ERROR, {"Insufficient operands"}));
-            return;
+        if (stack.is_empty()) {
+            throw OperationException("Insufficient operands");
         }
-
-        left = std::stoi(stack.get_top());
+        try {
+            left = std::stoi(stack.get_top());
+        } catch (const std::invalid_argument&) { // Catch std::invalid_argument
+            throw OperationException("non-numeric operands");
+        }
         stack.pop();
 
         // Perform arithmetic operations
@@ -307,23 +311,16 @@ void ClientConnection::handle_arithmetic_request(const Message& request) {
                 break;
             case MessageType::DIV:
                 if (right == 0) {
-                    send_message(Message(MessageType::ERROR, {"Division by zero"}));
+                    throw OperationException("Division by zero");
                     return;
                 }
                 result = left / right;
                 break;
             default:
-                send_message(Message(MessageType::ERROR, {"Unsupported arithmetic operation"}));
                 return;
         }
         stack.push(std::to_string(result));
         send_message(Message(MessageType::OK));
-    } catch (const std::invalid_argument& ) {
-        send_message(Message(MessageType::ERROR, {"Non-numeric operand"}));
-    } catch (const std::exception& e) {
-        send_message(Message(MessageType::ERROR, {e.what()}));
-        close_connection();
-    }
 }
 
 
