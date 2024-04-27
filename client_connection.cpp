@@ -30,13 +30,17 @@ ClientConnection::~ClientConnection()
 
 void ClientConnection::chat_with_client() {
     try {
-        Message request;
-        while ((request = read_message()), request.get_message_type() != MessageType::BYE) {
-            handle_request(request);
-        }
-        handle_bye_request(); // Properly close the connection after BYE message.
-    } catch (const std::exception &e) {
-        handle_exception(e); // This now decides to close connection or not based on error type
+            Message request;
+            while ((request = read_message()), request.get_message_type() != MessageType::BYE) {
+                if (!first_request_handled && request.get_message_type() != MessageType::LOGIN) {
+                    throw InvalidMessage("First request must be LOGIN");
+                }
+                handle_request(request);
+                first_request_handled = true;
+            }
+            handle_bye_request();
+        } catch (const std::exception &e) {
+            handle_exception(e);
     }
 }
 
@@ -68,6 +72,11 @@ void ClientConnection::send_message(const Message& msg) {
 }
 
 void ClientConnection::handle_request(const Message& request) {
+    if (!first_request_handled && request.get_message_type() != MessageType::LOGIN) {
+            send_message(Message(MessageType::ERROR, {"First request must be LOGIN"}));
+            close_connection();
+            return;
+    }
     try {
         if (!request.is_valid()) {
             throw InvalidMessage("Invalid message format");
@@ -124,7 +133,7 @@ void ClientConnection::handle_request(const Message& request) {
     } catch (const CommException& e) {
         send_message(Message(MessageType::ERROR, {"Communication failure"}));
         close_connection();
-    }
+    } 
 }
 
 void ClientConnection::handle_login_request(const Message& request) {
@@ -132,7 +141,26 @@ void ClientConnection::handle_login_request(const Message& request) {
     if (username.empty()) {
         throw InvalidMessage("Invalid login format");
     }
+    if (username.empty() || !is_valid_username(username)) {
+        send_message(Message(MessageType::ERROR, {"Invalid username"}));
+        close_connection();
+        return;
+    }
     send_message(Message(MessageType::OK));
+}
+
+bool ClientConnection::is_valid_username(const std::string& username) {
+    if (!isalpha(username[0])) {
+        return false; // First character must be a letter
+    }
+
+    for (char ch : username) {
+        if (!(isalnum(ch) || ch == '_')) {
+            return false; // Only alphanumeric characters and underscores are allowed
+        }
+    }
+
+    return true;
 }
 
 void ClientConnection::handle_create_request(const Message& request) {
@@ -156,9 +184,17 @@ void ClientConnection::handle_commit_request() {
 }
 
 void ClientConnection::handle_set_request(const Message& request) {
-    Table* table = m_server->find_table(request.get_table());
+    const std::string table_name = request.get_table();
+    const std::string key_name = request.get_key();
+
+    Table* table = m_server->find_table(table_name);
     if (!table) {
         send_message(Message(MessageType::ERROR, {"Unknown table"}));
+        return;
+    }
+
+    if (key_name.empty()) {
+        send_message(Message(MessageType::ERROR, {"Invalid key name"}));
         return;
     }
     
@@ -172,12 +208,12 @@ void ClientConnection::handle_set_request(const Message& request) {
 
     table->lock();
     try {
-        table->set(request.get_key(), value);
+        table->set(key_name, value);
         table->unlock();
         send_message(Message(MessageType::OK));
     } catch (const std::exception& e) {
         table->unlock();
-        send_message(Message(MessageType::FAILED, {e.what()}));
+        send_message(Message(MessageType::FAILED, {"Failed to set value: " + std::string(e.what())}));
     }
 }
 
@@ -215,7 +251,7 @@ void ClientConnection::handle_top_request() {
     if (stack.is_empty()) {
         send_message(Message(MessageType::ERROR, {"Stack is empty"}));
     } else {
-        Message response(Message(MessageType::DATA, {stack.get_top()}));
+        Message response(MessageType::DATA, {stack.get_top()});
         send_message(response);
     }
 }
