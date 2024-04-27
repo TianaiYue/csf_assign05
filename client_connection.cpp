@@ -146,7 +146,26 @@ void ClientConnection::handle_login_request(const Message& request) {
     if (username.empty()) {
         throw InvalidMessage("Invalid login format");
     }
+    if (username.empty() || !is_valid_username(username)) {
+        send_message(Message(MessageType::ERROR, {"Invalid username"}));
+        close_connection();
+        return;
+    }
     send_message(Message(MessageType::OK));
+}
+
+bool ClientConnection::is_valid_username(const std::string& username) {
+    if (!isalpha(username[0])) {
+        return false; // First character must be a letter
+    }
+
+    for (char ch : username) {
+        if (!(isalnum(ch) || ch == '_')) {
+            return false; // Only alphanumeric characters and underscores are allowed
+        }
+    }
+
+    return true;
 }
 
 void ClientConnection::handle_create_request(const Message& request) {
@@ -282,9 +301,10 @@ void ClientConnection::handle_arithmetic_request(const Message& request) {
         }
         send_message(Message(MessageType::DATA, {std::to_string(result)}));
     } catch (const std::invalid_argument& e) {
-        send_message(Message(MessageType::ERROR, {"Non-numeric operand"}));
+        send_message(Message(MessageType::FAILED, {"Non-numeric operand"}));
     } catch (const std::exception& e) {
         send_message(Message(MessageType::ERROR, {e.what()}));
+        close_connection();
     }
 }
 
