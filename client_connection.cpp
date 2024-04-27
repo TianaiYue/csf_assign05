@@ -155,7 +155,7 @@ void ClientConnection::handle_login_request(const Message& request) {
 }
 
 bool ClientConnection::is_valid_username(const std::string& username) {
-    if (!isalpha(username[0])) {
+    if (username.empty() || !isalpha(username[0])) {
         return false; // First character must be a letter
     }
 
@@ -188,26 +188,12 @@ void ClientConnection::handle_commit_request() {
     send_message(Message(MessageType::OK));
 }
 
-bool ClientConnection::is_valid_identifier(const std::string& str) {
-    if (str.empty() || !isalpha(str[0])) {
-        return false; // Must start with a letter
-    }
-    
-    for (char c : str) {
-        if (!isalnum(c) && c != '_') {
-            return false; // Must contain only letters, digits, or underscores
-        }
-    }
-
-    return true;
-}
-
 void ClientConnection::handle_set_request(const Message& request) {
     Table* table = m_server->find_table(request.get_table());
     
     std::string table_name = request.get_table();
     std::string key_name = request.get_key();
-    if (!is_valid_identifier(table_name) || !is_valid_identifier(key_name)) {
+    if (!is_valid_username(table_name) || !is_valid_username(key_name)) {
         send_message(Message(MessageType::ERROR, {"Invalid table or key name"}));
         return;
     }
