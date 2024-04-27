@@ -28,26 +28,28 @@ ClientConnection::~ClientConnection()
     close_connection(); 
 }
 
-void ClientConnection::chat_with_client()
-{
-    // TODO: implement
+void ClientConnection::chat_with_client() {
     try {
-        while (true) {
-            Message request = read_message();
+        Message request;
+        while ((request = read_message()), request.get_message_type() != MessageType::BYE) {
             handle_request(request);
         }
+        handle_bye_request(); // Properly close the connection after BYE message.
     } catch (const std::exception &e) {
-        std::cerr << "Exception in client connection: " << e.what() << std::endl;
-        send_message(Message(MessageType::ERROR, {"Internal server error"})); 
+        handle_exception(e); // This now decides to close connection or not based on error type
     }
-    close_connection();
 }
 
 // TODO: additional member functions
 Message ClientConnection::read_message() {
     char buf[Message::MAX_ENCODED_LEN];
-    if (rio_readlineb(&m_fdbuf, buf, sizeof(buf)) <= 0) {
-        throw CommException("Failed to read from client");
+    ssize_t result = rio_readlineb(&m_fdbuf, buf, sizeof(buf));
+    if (result <= 0) {
+        if (result == 0) {
+            throw CommException("Client closed the connection");
+        } else {
+            throw CommException("Failed to read from client");
+        }
     }
     Message msg;
     MessageSerialization::decode(std::string(buf), msg);
@@ -66,12 +68,11 @@ void ClientConnection::send_message(const Message& msg) {
 }
 
 void ClientConnection::handle_request(const Message& request) {
-    if (!request.is_valid()) {
-        send_message(Message(MessageType::ERROR, {"Invalid message format"}));
-        return;
-    }
-    
     try {
+        if (!request.is_valid()) {
+            throw InvalidMessage("Invalid message format");
+        }
+
         switch (request.get_message_type()) {
             case MessageType::LOGIN:
                 handle_login_request(request);
@@ -110,21 +111,28 @@ void ClientConnection::handle_request(const Message& request) {
                 handle_bye_request();
                 break;
             default:
-                send_message(Message(MessageType::ERROR, {"Unsupported operation"}));
-                break;
+                throw InvalidMessage("Unsupported operation");
         }
-    } catch (const std::exception& e) {
-        handle_exception(e);
+    } catch (const InvalidMessage& e) {
+        send_message(Message(MessageType::ERROR, {e.what()}));
+        close_connection();
+    } catch (const OperationException& e) {
+        send_message(Message(MessageType::FAILED, {e.what()}));
+    } catch (const FailedTransaction& e) {
+        send_message(Message(MessageType::FAILED, {e.what()}));
+        // Optional: rollback any transaction if necessary
+    } catch (const CommException& e) {
+        send_message(Message(MessageType::ERROR, {"Communication failure"}));
+        close_connection();
     }
 }
 
 void ClientConnection::handle_login_request(const Message& request) {
     std::string username = request.get_username();
-    if (!username.empty()) {
-        send_message(Message(MessageType::OK));
-    } else {
-        send_message(Message(MessageType::ERROR, {"Invalid login format"}));
+    if (username.empty()) {
+        throw InvalidMessage("Invalid login format");
     }
+    send_message(Message(MessageType::OK));
 }
 
 void ClientConnection::handle_create_request(const Message& request) {
@@ -153,12 +161,24 @@ void ClientConnection::handle_set_request(const Message& request) {
         send_message(Message(MessageType::ERROR, {"Unknown table"}));
         return;
     }
+    
+    if (stack.is_empty()) {
+        send_message(Message(MessageType::FAILED, {"Stack is empty"}));
+        return;
+    }
+
+    std::string value = stack.get_top();
+    stack.pop(); // Ensure the pop is done after accessing the top.
 
     table->lock();
-    table->set(request.get_key(), request.get_value());
-    table->commit_changes();
-    table->unlock();
-    send_message(Message(MessageType::OK));
+    try {
+        table->set(request.get_key(), value);
+        table->unlock();
+        send_message(Message(MessageType::OK));
+    } catch (const std::exception& e) {
+        table->unlock();
+        send_message(Message(MessageType::FAILED, {e.what()}));
+    }
 }
 
 void ClientConnection::handle_get_request(const Message& request) {
@@ -171,13 +191,15 @@ void ClientConnection::handle_get_request(const Message& request) {
     table->lock();
     try {
         std::string value = table->get(request.get_key());
+        stack.push(value); // Ensure the value is pushed onto the stack
         table->unlock();
-        send_message(Message(MessageType::DATA, {value}));
-    } catch (const OperationException& e) {
+        send_message(Message(MessageType::OK));
+    } catch (const std::exception& e) {
         table->unlock();
-        send_message(Message(MessageType::ERROR, {e.what()}));
+        send_message(Message(MessageType::FAILED, {e.what()}));
     }
 }
+
 
 void ClientConnection::handle_push_request(const Message& request) {
     stack.push(request.get_arg(0));
@@ -190,19 +212,24 @@ void ClientConnection::handle_pop_request() {
 }
 
 void ClientConnection::handle_top_request() {
-    // Create a Message object with the required type and data
-    Message response(MessageType::DATA, {stack.get_top()});
-    // Pass the created Message object to the send_message function
-    send_message(response);
+    if (stack.is_empty()) {
+        send_message(Message(MessageType::ERROR, {"Stack is empty"}));
+    } else {
+        Message response(Message(MessageType::DATA, {stack.get_top()}));
+        send_message(response);
+    }
 }
 
 
 void ClientConnection::handle_arithmetic_request(const Message& request) {
     try {
-        int left = std::stoi(stack.get_top());
+        // Attempt to pop twice. If stack is underflowed, an exception should be thrown.
         int right = std::stoi(stack.get_top());
+        stack.pop();
+        int left = std::stoi(stack.get_top());
+        stack.pop();
+
         int result;
-        
         switch (request.get_message_type()) {
             case MessageType::ADD:
                 result = left + right;
@@ -224,28 +251,41 @@ void ClientConnection::handle_arithmetic_request(const Message& request) {
                 send_message(Message(MessageType::ERROR, {"Unsupported arithmetic operation"}));
                 return;
         }
-        
         send_message(Message(MessageType::DATA, {std::to_string(result)}));
-    } catch (const std::invalid_argument& e) {
-        send_message(Message(MessageType::ERROR, {"Invalid operands"}));
-    } catch (const std::out_of_range& e) {
-        send_message(Message(MessageType::ERROR, {"Operand out of range"}));
+    } catch (const std::exception& e) {
+        // This catch block assumes your stack throws std::exception on errors like underflow.
+        send_message(Message(MessageType::ERROR, {e.what()}));
     }
 }
 
+
 void ClientConnection::handle_bye_request() {
     send_message(Message(MessageType::OK));
-    return;
+    close_connection();
 }
             
 void ClientConnection::handle_exception(const std::exception& e) {
-    std::cerr << "Exception in client connection: " << e.what() << std::endl;
-    send_message(Message(MessageType::ERROR, {"Internal server error"}));
-    m_server->rollback_transaction(m_client_fd);
+    if (dynamic_cast<const OperationException*>(&e) || dynamic_cast<const FailedTransaction*>(&e)) {
+        // Log error but continue session
+        std::cerr << "Recoverable error: " << e.what() << std::endl;
+        send_message(Message(MessageType::FAILED, {e.what()}));
+    } else {
+        // Log error and terminate session
+        std::cerr << "Unrecoverable error: " << e.what() << std::endl;
+        send_message(Message(MessageType::ERROR, {e.what()}));
+        close_connection();
+    }
 }
 
-void ClientConnection::close_connection()
-{
-    Close(m_client_fd);
-    std::cout << "Connection with client " << m_client_fd << " closed." << std::endl;
+void ClientConnection::rollback_transaction() {
+    m_server->rollback_transaction(m_client_fd);
+    // Assuming unlock all tables logic is implemented within server's rollback
+}
+
+void ClientConnection::close_connection() {
+    if (m_client_fd >= 0) {
+        Close(m_client_fd);  // Close function wraps close system call, handles errors.
+        m_client_fd = -1;    // Invalidate the descriptor.
+        std::cout << "Connection with client closed." << std::endl;
+    }
 }
