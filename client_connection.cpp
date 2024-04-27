@@ -188,8 +188,30 @@ void ClientConnection::handle_commit_request() {
     send_message(Message(MessageType::OK));
 }
 
+bool ClientConnection::is_valid_identifier(const std::string& str) {
+    if (str.empty() || !isalpha(str[0])) {
+        return false; // Must start with a letter
+    }
+    
+    for (char c : str) {
+        if (!isalnum(c) && c != '_') {
+            return false; // Must contain only letters, digits, or underscores
+        }
+    }
+
+    return true;
+}
+
 void ClientConnection::handle_set_request(const Message& request) {
     Table* table = m_server->find_table(request.get_table());
+    
+    std::string table_name = request.get_table();
+    std::string key_name = request.get_key();
+    if (!is_valid_identifier(table_name) || !is_valid_identifier(key_name)) {
+        send_message(Message(MessageType::ERROR, {"Invalid table or key name"}));
+        return;
+    }
+
     if (!table) {
         send_message(Message(MessageType::ERROR, {"Unknown table"}));
         return;
