@@ -1,6 +1,6 @@
 /*
  * A5MS1
- * The ser
+ * The server
  * Cassie Zhang xzhan304
  * Tianai Yue tyue4
  */
@@ -123,9 +123,9 @@ Table* Server::find_table(const std::string &name) {
 }
 
 void Server::begin_transaction(int client_id) {
-    pthread_mutex_lock(&mutex);
+    Guard guard(mutex);
     in_transaction[client_id] = true;
-    pthread_mutex_unlock(&mutex);
+    transaction_locks[client_id].clear();
 }
 
 void Server::commit_transaction(int client_id) {
@@ -176,10 +176,12 @@ void Server::rollback_transaction(int client_id) {
 }
 
 bool Server::lock_table(const std::string& table_name, int client_id) {
+    Guard guard(mutex);  // Protect the access to the tables map
     auto it = tables.find(table_name);
     if (it == tables.end()) {
-        return false;
+        return false; // Table does not exist
     }
+
     if (it->second->trylock()) {
         transaction_locks[client_id].insert(table_name);
         return true;
@@ -188,10 +190,11 @@ bool Server::lock_table(const std::string& table_name, int client_id) {
 }
 
 void Server::unlock_table(const std::string& table_name, int client_id) {
+    Guard guard(mutex);  // Protect the access to the tables map
     auto it = tables.find(table_name);
     if (it != tables.end() && transaction_locks[client_id].find(table_name) != transaction_locks[client_id].end()) {
         it->second->unlock();
-        transaction_locks[client_id].erase(table_name);
+        transaction_locks[client_id].erase(table_name); // Remove from transaction locks
     }
 }
 

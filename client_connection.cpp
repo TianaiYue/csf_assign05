@@ -43,10 +43,17 @@ void ClientConnection::chat_with_client() {
         handle_bye_request();
     } catch (const CommException& e) {
         std::cerr << "Communication exception: " << e.what() << std::endl;
-        close_connection();
+        handle_exception(e);
+    } catch (const InvalidMessage& e) {
+        std::cerr << "InvalidMessage exception: " << e.what() << std::endl;
+        handle_exception(e);
+    } catch (const OperationException& e) {
+        std::cerr << "InvalidMessage exception: " << e.what() << std::endl;
+        handle_exception(e);
     } catch (const std::exception& e) {
         std::cerr << "General exception: " << e.what() << std::endl;
-        handle_exception(e);
+        
+        close_connection();
     }
 }
 
@@ -195,6 +202,7 @@ void ClientConnection::handle_set_request(const Message& request) {
 
     std::string table_name = request.get_table();
     std::string key_name = request.get_key();
+
     if (!is_valid_username(table_name) || !is_valid_username(key_name)) {
         throw InvalidMessage("Invalid table or key name");
     }
@@ -206,44 +214,49 @@ void ClientConnection::handle_set_request(const Message& request) {
     if (stack.is_empty()) {
         throw OperationException("Stack is empty");
     }
-
-    std::string value = stack.get_top();
-    stack.pop(); // Ensure the pop is done after accessing the top.
-
-    table->lock();
-    try {
-        table->set(request.get_key(), value);
-        table->unlock();
-        send_message(Message(MessageType::OK));
-    } catch (const std::exception& e) {
-        table->unlock();
-        throw FailedTransaction(e.what());
+    
+    // Attempt to lock the table.
+    if (!m_server->lock_table(table_name, m_client_fd)) {
+        throw FailedTransaction("Could not lock table");
     }
+    
+    try {
+        auto table = m_server->find_table(table_name);
+        std::string value = stack.get_top();
+        stack.pop();
+        table->set(key_name, value);
+        send_message(Message(MessageType::OK));
+    } catch (...) {
+        // Ensure that we unlock the table in case of any exception
+        m_server->unlock_table(table_name, m_client_fd);
+        throw; // Re-throw the exception to be handled by the caller
+    }
+    
+    // Unlock the table after successful set
+    m_server->unlock_table(table_name, m_client_fd);
 }
 
 void ClientConnection::handle_get_request(const Message& request) {
-    Table* table = nullptr;
-    try {
-        table = m_server->find_table(request.get_table());
-        if (!table) {
-            throw OperationException("Unknown table");
-        }
-
-        table->lock();
-        try {
-            std::string value = table->get(request.get_key());
-            stack.push(value);  // Ensure the value is pushed onto the stack
-            table->unlock();  // It's important to unlock before sending a message to avoid deadlocks
-            send_message(Message(MessageType::OK));
-        } catch (const std::exception& e) {
-            table->unlock();
-            send_message(Message(MessageType::ERROR, {e.what()}));
-            return;  // Changed to send an error message instead of throwing an exception
-        }
-    } catch (const std::exception& e) {
-        send_message(Message(MessageType::ERROR, {e.what()}));
-        return;  // Handle any other exceptions gracefully
+     std::string table_name = request.get_table();
+    
+    // Attempt to lock the table.
+    if (!m_server->lock_table(table_name, m_client_fd)) {
+        throw FailedTransaction("Could not lock table");
     }
+
+    try {
+        auto table = m_server->find_table(table_name);
+        std::string value = table->get(request.get_key());
+        stack.push(value);
+        send_message(Message(MessageType::OK));
+    } catch (...) {
+        // Ensure that we unlock the table in case of any exception
+        m_server->unlock_table(table_name, m_client_fd);
+        throw; // Re-throw the exception to be handled by the caller
+    }
+    
+    // Unlock the table after successful get
+    m_server->unlock_table(table_name, m_client_fd);
 }
 
 void ClientConnection::handle_push_request(const Message& request) {

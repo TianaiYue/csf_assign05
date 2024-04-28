@@ -34,13 +34,16 @@ public:
 
   // TODO: add member functions
   void create_table(const std::string &name);
-    Table* find_table(const std::string &name);
-    void begin_transaction(int client_id);
-    void commit_transaction(int client_id);
-    void rollback_transaction(int client_id);
-    bool lock_table(const std::string& table_name, int client_id);
-    void unlock_table(const std::string& table_name, int client_id);
-    bool is_transaction_active(int client_id);
+  Table* find_table(const std::string &name);
+  void begin_transaction(int client_id);
+  void commit_transaction(int client_id);
+  void rollback_transaction(int client_id);
+  bool lock_table(const std::string& table_name, int client_id);
+  void unlock_table(const std::string& table_name, int client_id);
+  bool is_transaction_active(int client_id);
+  bool try_lock_table(const std::string& table_name, int client_id);
+  bool lock_tables_in_order(const std::vector<std::string>& table_names, int client_id);
+  void unlock_tables(int client_id);
 
   // Some suggested member functions:
 /*
