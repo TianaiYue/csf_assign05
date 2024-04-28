@@ -124,30 +124,35 @@ Table* Server::find_table(const std::string &name) {
 
 void Server::begin_transaction(int client_id) {
     Guard guard(mutex);
+    // Ensure no other transaction is active for the client
+    if (in_transaction[client_id]) {
+        throw FailedTransaction("A transaction is already active for this client.");
+    }
     in_transaction[client_id] = true;
     transaction_locks[client_id].clear();
 }
 
 void Server::commit_transaction(int client_id) {
-    pthread_mutex_lock(&mutex);
+    Guard guard(mutex);
     if (in_transaction[client_id]) {
         for (const auto &table_name : transaction_locks[client_id]) {
             auto it = tables.find(table_name);
             if (it != tables.end()) {
-                it->second->commit_changes();
-                unlock_table(table_name, client_id);
+                it->second->commit_changes(); // This operation must be defined in your Table class
             }
+            it->second->unlock(); // Unlock the table after committing changes
         }
+        transaction_locks[client_id].clear();
+        in_transaction[client_id] = false;
+    } else {
+        throw FailedTransaction("No active transaction to commit for this client.");
     }
-    in_transaction[client_id] = false;
-    pthread_mutex_unlock(&mutex);
 }
 
 void Server::rollback_transaction(int client_id) {
     Guard guard(mutex);
-
     if (!is_transaction_active(client_id)) {
-        // Optionally log that we tried to roll back an inactive transaction
+        // If no transaction is active, there's nothing to roll back.
         return;
     }
 
