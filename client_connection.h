@@ -15,7 +15,7 @@ private:
   int m_client_fd;
   rio_t m_fdbuf;
   ValueStack stack;
-  bool first_request_handled = false;
+  bool in_transaction; 
 
   // copy constructor and assignment operator are prohibited
   ClientConnection( const ClientConnection & );

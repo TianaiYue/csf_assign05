@@ -225,9 +225,13 @@ void ClientConnection::handle_set_request(const Message& request) {
         std::string value = stack.get_top();
         stack.pop();
         table->set(key_name, value);
+        if (!in_transaction) {
+            table->commit_changes();
+            table->unlock();
+        }
         send_message(Message(MessageType::OK));
     } catch (...) {
-        if (!m_server->is_transaction_active(m_client_fd)) {
+        if (!m_server->is_transaction_active(m_client_fd || !in_transaction)) {
             // Only unlock if we're not in a transaction
             table->unlock();
         }
@@ -257,6 +261,9 @@ void ClientConnection::handle_get_request(const Message& request) {
         if (!m_server->is_transaction_active(m_client_fd)) {
             // Only unlock if we're not in a transaction
             table->unlock();
+        }
+        if (!in_transaction) {
+            m_server->unlock_table(table_name, m_client_fd);
         }
         throw;
     }
@@ -361,7 +368,9 @@ void ClientConnection::handle_bye_request() {
 void ClientConnection::handle_exception(const std::exception& e) {
     // Log the error
     std::cerr << "Error during client communication: " << e.what() << std::endl;
-
+    if (in_transaction) {
+        rollback_transaction();
+    }
     if (dynamic_cast<const OperationException*>(&e) || dynamic_cast<const FailedTransaction*>(&e)) {
         send_message(Message(MessageType::FAILED, {e.what()}));
     } else {
@@ -372,8 +381,11 @@ void ClientConnection::handle_exception(const std::exception& e) {
 
 
 void ClientConnection::rollback_transaction() {
-    m_server->rollback_transaction(m_client_fd);
-    // Assuming unlock all tables logic is implemented within server's rollback
+    if (in_transaction) {
+        m_server->rollback_transaction(m_client_fd);
+        send_message(Message(MessageType::FAILED, {"Transaction rolled back due to failure"}));
+        in_transaction = false; // Reset the transaction flag
+    }
 }
 
 void ClientConnection::close_connection() {

@@ -64,9 +64,8 @@ void Server::server_loop()
         if (pthread_create(&thr_id, nullptr, client_worker, client) != 0) {
             log_error("Could not create client thread");
             delete client;
-        } else {
-            pthread_detach(thr_id);
-        }
+        } 
+        pthread_detach(thr_id);
     }
 }
 
@@ -115,11 +114,10 @@ Table* Server::find_table(const std::string &name) {
     Guard guard(mutex);
     auto it = tables.find(name);
 
-    if (it != tables.end()) {
-        return it->second;
-    } else {
+    if (it == tables.end()) {
         throw OperationException("Table not found");
     }
+    return it->second;
 }
 
 void Server::begin_transaction(int client_id) {
