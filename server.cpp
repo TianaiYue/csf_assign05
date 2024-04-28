@@ -1,6 +1,6 @@
 /*
  * A5MS1
- * The server
+ * The ser
  * Cassie Zhang xzhan304
  * Tianai Yue tyue4
  */
@@ -12,7 +12,6 @@
 #include "exceptions.h"
 #include "guard.h"
 #include "server.h"
-#include "table.h"
 
 Server::Server() 
     // TODO: initialize member variables
@@ -43,7 +42,7 @@ void Server::listen( const std::string &port )
 
 void Server::server_loop()
 {
-// TODO: implement
+  // TODO: implement
 
   // Note that your code to start a worker thread for a newly-connected
   // client might look something like this:
@@ -73,32 +72,23 @@ void Server::server_loop()
 
 void *Server::client_worker( void *arg )
 {
-// TODO: implement
+  // TODO: implement
 
-// Assuming that your ClientConnection class has a member function
-// called chat_with_client(), your implementation might look something
-// like this:
-
-  // std::unique_ptr<ClientConnection> client( static_cast<ClientConnection *>( arg ) );
-  // client->chat_with_client();
-  // return nullptr;
-
+  // Assuming that your ClientConnection class has a member function
+  // called chat_with_client(), your implementation might look something
+  // like this:
+/*
   std::unique_ptr<ClientConnection> client( static_cast<ClientConnection *>( arg ) );
-  try {
-    client->chat_with_client();
-  } catch (const std::exception& e) {
-    std::cerr << "Error communicating with client: " << e.what() << std::endl;
-    client->send_error("ERROR");  // Send an error response if something goes wrong
-  }
+  client->chat_with_client();
   return nullptr;
 */
     std::unique_ptr<ClientConnection> client(static_cast<ClientConnection *>(arg));
-    // try {
+    try {
         client->chat_with_client();
-    // } catch (const std::exception &e) {
-    //     std::cerr << "Error communicating with client: " << e.what() << std::endl;
-    //     client->send_message(MessageType::ERROR);
-    // }
+    } catch (const std::exception &e) {
+        std::cerr << "Error communicating with client: " << e.what() << std::endl;
+        client->send_message(MessageType::ERROR);
+    }
     return nullptr;
 }
 
@@ -134,73 +124,76 @@ Table* Server::find_table(const std::string &name) {
 
 void Server::begin_transaction(int client_id) {
     Guard guard(mutex);
-    // Ensure no other transaction is active for the client
-    if (in_transaction[client_id]) {
-        throw FailedTransaction("A transaction is already active for this client.");
+    if (in_transaction.find(client_id) == in_transaction.end() || !in_transaction[client_id]) {
+        in_transaction[client_id] = true;
+        transaction_locks[client_id].clear();  // Ensure clean transaction state
     }
-    in_transaction[client_id] = true;
-    transaction_locks[client_id].clear();
 }
 
 void Server::commit_transaction(int client_id) {
     Guard guard(mutex);
-    if (in_transaction[client_id]) {
-        for (const auto &table_name : transaction_locks[client_id]) {
-            auto it = tables.find(table_name);
-            if (it != tables.end()) {
-                it->second->commit_changes(); // This operation must be defined in your Table class
+    auto trans_it = in_transaction.find(client_id);
+    if (trans_it != in_transaction.end() && trans_it->second) {
+        try {
+            for (const auto &table_name : transaction_locks[client_id]) {
+                auto it = tables.find(table_name);
+                if (it != tables.end()) {
+                    it->second->commit_changes();
+                    it->second->unlock();  // Ensure unlocking after commit
+                }
             }
-            it->second->unlock(); // Unlock the table after committing changes
+            transaction_locks[client_id].clear();
+            in_transaction[client_id] = false;
+        } catch (const std::exception& e) {
+            // Handle exception, possibly rolling back changes
+            std::cerr << "Failed to commit transaction: " << e.what() << std::endl;
+            rollback_transaction(client_id);
         }
-        transaction_locks[client_id].clear();
-        in_transaction[client_id] = false;
-    } else {
-        throw FailedTransaction("No active transaction to commit for this client.");
     }
 }
 
 void Server::rollback_transaction(int client_id) {
     Guard guard(mutex);
-    if (!is_transaction_active(client_id)) {
-        // If no transaction is active, there's nothing to roll back.
-        return;
-    }
-
-    for (const auto &table_name : transaction_locks[client_id]) {
-        auto it = tables.find(table_name);
-        if (it != tables.end()) {
-            it->second->rollback_changes(); // This operation must be defined in your Table class
-            it->second->unlock(); // Unlock the table after rolling back changes
+    auto trans_it = in_transaction.find(client_id);
+    if (trans_it != in_transaction.end() && trans_it->second) {
+        for (const auto &table_name : transaction_locks[client_id]) {
+            auto it = tables.find(table_name);
+            if (it != tables.end()) {
+                it->second->rollback_changes();
+                it->second->unlock();
+            }
         }
+        transaction_locks[client_id].clear();
+        in_transaction[client_id] = false;
     }
-    transaction_locks[client_id].clear();
-    in_transaction[client_id] = false;
 }
 
 bool Server::lock_table(const std::string& table_name, int client_id) {
-    Guard guard(mutex); // Protect the access to the tables map
+    Guard guard(mutex);
     auto it = tables.find(table_name);
     if (it == tables.end()) {
-        throw FailedTransaction("Table does not exist.");
+        throw OperationException("Table not found for locking");
     }
-
     if (it->second->trylock()) {
         transaction_locks[client_id].insert(table_name);
-        return true; // Lock was successfully acquired
+        return true;
     }
-    return false;
+    return false; // Could consider throwing an exception or handling this situation differently.
 }
 
 void Server::unlock_table(const std::string& table_name, int client_id) {
-    Guard guard(mutex); // Protect the access to the tables map
+    Guard guard(mutex);
     auto it = tables.find(table_name);
     if (it != tables.end() && transaction_locks[client_id].find(table_name) != transaction_locks[client_id].end()) {
-        it->second->unlock(); // Release the mutex
-        transaction_locks[client_id].erase(table_name); // Remove from transaction locks
+        it->second->unlock();
+        transaction_locks[client_id].erase(table_name);
+    } else {
+        // Log or handle the case where an attempt is made to unlock a table that isn't locked by this client.
+        std::cerr << "Attempt to unlock a table not locked by client" << std::endl;
     }
 }
 
 bool Server::is_transaction_active(int client_id) {
-   Guard guard(mutex);
+    Guard guard(mutex);
     return in_transaction.find(client_id) != in_transaction.end() && in_transaction[client_id];
 }

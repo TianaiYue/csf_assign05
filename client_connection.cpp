@@ -34,7 +34,6 @@ void ClientConnection::chat_with_client() {
         if (request.get_message_type() != MessageType::LOGIN) {
             send_message(Message(MessageType::ERROR, {"First request must be LOGIN"}));
             close_connection();
-            return;
         }
         handle_login_request(request);
         while ((request = read_message()), request.get_message_type() != MessageType::BYE) {
@@ -43,17 +42,10 @@ void ClientConnection::chat_with_client() {
         handle_bye_request();
     } catch (const CommException& e) {
         std::cerr << "Communication exception: " << e.what() << std::endl;
-        handle_exception(e);
-    } catch (const InvalidMessage& e) {
-        std::cerr << "InvalidMessage exception: " << e.what() << std::endl;
-        handle_exception(e);
-    } catch (const OperationException& e) {
-        std::cerr << "InvalidMessage exception: " << e.what() << std::endl;
-        handle_exception(e);
+        close_connection();
     } catch (const std::exception& e) {
         std::cerr << "General exception: " << e.what() << std::endl;
-        
-        close_connection();
+        handle_exception(e);
     }
 }
 
@@ -202,7 +194,6 @@ void ClientConnection::handle_set_request(const Message& request) {
 
     std::string table_name = request.get_table();
     std::string key_name = request.get_key();
-
     if (!is_valid_username(table_name) || !is_valid_username(key_name)) {
         throw InvalidMessage("Invalid table or key name");
     }
@@ -214,72 +205,42 @@ void ClientConnection::handle_set_request(const Message& request) {
     if (stack.is_empty()) {
         throw OperationException("Stack is empty");
     }
-    
-    // Attempt to lock the table.
-    if (!m_server->lock_table(table_name, m_client_fd)) {
-        table->lock();
-    }
-    
+
+    std::string value = stack.get_top();
+    stack.pop(); // Ensure the pop is done after accessing the top.
+
+    table->lock();
     try {
-        auto table = m_server->find_table(table_name);
-        std::string value = stack.get_top();
-        stack.pop();
-        table->set(key_name, value);
-        send_message(Message(MessageType::OK));
-    } catch (...) {
-        if (!m_server->is_transaction_active(m_client_fd)) {
-            // Only unlock if we're not in a transaction
-            table->unlock();
-        }
-        throw;
-    }
-    if (!m_server->is_transaction_active(m_client_fd)) {
-        // Unlock the table after a successful set in auto-commit mode
+        table->set(request.get_key(), value);
         table->unlock();
+        send_message(Message(MessageType::OK));
+    } catch (const std::exception& e) {
+        table->unlock();
+        throw FailedTransaction(e.what());
     }
 }
 
 void ClientConnection::handle_get_request(const Message& request) {
-     std::string table_name = request.get_table();
     Table* table = m_server->find_table(request.get_table());
-    if (!m_server->is_transaction_active(m_client_fd)) {
-        // In auto-commit mode, lock the table for the duration of this operation
-        table->lock();
+    if (!table) {
+        throw OperationException("Unknown table");
     }
 
-
+    table->lock();
     try {
-        auto table = m_server->find_table(table_name);
         std::string value = table->get(request.get_key());
-        stack.push(value);
-        send_message(Message(MessageType::OK));
-    } catch (...) {
-        if (!m_server->is_transaction_active(m_client_fd)) {
-            // Only unlock if we're not in a transaction
-            table->unlock();
-        }
-        throw;
-    }
-    
-    if (!m_server->is_transaction_active(m_client_fd)) {
-        // Unlock the table after a successful get in auto-commit mode
+        stack.push(value); // Ensure the value is pushed onto the stack
         table->unlock();
+        send_message(Message(MessageType::OK));
+    } catch (const std::exception& e) {
+        table->unlock();
+        throw FailedTransaction(e.what());
     }
 }
 
 void ClientConnection::handle_push_request(const Message& request) {
-    try {
-        // Make sure there is at least one argument to push
-        if (request.get_arg(0).empty()) {  // Using get_arg(index) which is assumed to exist and return the argument at index 0
-            send_message(Message(MessageType::ERROR, {"No value provided to push"}));
-            return;
-        }
-        std::string value = request.get_arg(0); // Get the first argument for pushing onto the stack
-        stack.push(value);
-        send_message(Message(MessageType::OK));
-    } catch (const std::exception& e) {
-        send_message(Message(MessageType::ERROR, {e.what()}));
-    }
+    stack.push(request.get_arg(0));
+    send_message(Message(MessageType::OK));
 }
 
 void ClientConnection::handle_pop_request() {
@@ -288,15 +249,11 @@ void ClientConnection::handle_pop_request() {
 }
 
 void ClientConnection::handle_top_request() {
-    try {
-        if (stack.is_empty()) {  // Check if the stack is empty before accessing
-            send_message(Message(MessageType::FAILED, {"Error: empty stack"}));
-            return;
-        }
-        std::string topValue = stack.get_top(); // Access the top value safely
-        send_message(Message(MessageType::DATA, {topValue}));
-    } catch (const std::exception& e) {
-        send_message(Message(MessageType::ERROR, {e.what()}));
+    if (stack.is_empty()) {
+        throw OperationException("Stack is empty");
+    } else {
+        std::string topValue = stack.get_top();
+        send_message(Message(MessageType::DATA, {topValue})); // Send DATA response for successful retrieval
     }
 }
 
@@ -359,15 +316,9 @@ void ClientConnection::handle_bye_request() {
 }
             
 void ClientConnection::handle_exception(const std::exception& e) {
-    // Log the error
     std::cerr << "Error during client communication: " << e.what() << std::endl;
-
-    if (dynamic_cast<const OperationException*>(&e) || dynamic_cast<const FailedTransaction*>(&e)) {
-        send_message(Message(MessageType::FAILED, {e.what()}));
-    } else {
-        send_message(Message(MessageType::ERROR, {e.what()}));
-        close_connection();
-    }
+    send_message(Message(MessageType::ERROR, {e.what()}));
+    close_connection();
 }
 
 
@@ -380,6 +331,5 @@ void ClientConnection::close_connection() {
     if (m_client_fd >= 0) {
         Close(m_client_fd);  // Close function wraps close system call, handles errors.
         m_client_fd = -1;    // Invalidate the descriptor.
-        std::cout << "Connection with client closed." << std::endl;
     }
 }
