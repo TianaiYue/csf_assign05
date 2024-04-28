@@ -83,12 +83,12 @@ void *Server::client_worker( void *arg )
   return nullptr;
 */
     std::unique_ptr<ClientConnection> client(static_cast<ClientConnection *>(arg));
-    try {
+    // try {
         client->chat_with_client();
-    } catch (const std::exception &e) {
-        std::cerr << "Error communicating with client: " << e.what() << std::endl;
-        client->send_message(MessageType::ERROR);
-    }
+    // } catch (const std::exception &e) {
+    //     std::cerr << "Error communicating with client: " << e.what() << std::endl;
+    //     client->send_message(MessageType::ERROR);
+    // }
     return nullptr;
 }
 
@@ -156,54 +156,41 @@ void Server::rollback_transaction(int client_id) {
         return;
     }
 
-    bool errorOccurred = false;
     for (const auto &table_name : transaction_locks[client_id]) {
-        try {
-            Table *table = find_table(table_name);
-            if (table) {
-                table->rollback_changes();
-                table->unlock();
-            }
-        } catch (const std::exception& e) {
-            // Log the error
-            std::cerr << "Error during rollback of table " << table_name << ": " << e.what() << std::endl;
-            errorOccurred = true;
+        auto it = tables.find(table_name);
+        if (it != tables.end()) {
+            it->second->rollback_changes(); // This operation must be defined in your Table class
+            it->second->unlock(); // Unlock the table after rolling back changes
         }
     }
-
+    transaction_locks[client_id].clear();
     in_transaction[client_id] = false;
-    transaction_locks.erase(client_id);
-
-    if (errorOccurred) {
-        // Handle or log the fact that there was an error during rollback
-        std::cerr << "One or more errors occurred during the rollback process for client " << client_id << std::endl;
-    }
 }
 
 bool Server::lock_table(const std::string& table_name, int client_id) {
-    Guard guard(mutex);  // Protect the access to the tables map
+    Guard guard(mutex); // Protect the access to the tables map
     auto it = tables.find(table_name);
     if (it == tables.end()) {
-        return false; // Table does not exist
+        throw FailedTransaction("Table does not exist.");
     }
 
     if (it->second->trylock()) {
         transaction_locks[client_id].insert(table_name);
-        return true;
+        return true; // Lock was successfully acquired
     }
     return false;
 }
 
 void Server::unlock_table(const std::string& table_name, int client_id) {
-    Guard guard(mutex);  // Protect the access to the tables map
+    Guard guard(mutex); // Protect the access to the tables map
     auto it = tables.find(table_name);
     if (it != tables.end() && transaction_locks[client_id].find(table_name) != transaction_locks[client_id].end()) {
-        it->second->unlock();
+        it->second->unlock(); // Release the mutex
         transaction_locks[client_id].erase(table_name); // Remove from transaction locks
     }
 }
 
 bool Server::is_transaction_active(int client_id) {
-    Guard guard(mutex);
+   Guard guard(mutex);
     return in_transaction.find(client_id) != in_transaction.end() && in_transaction[client_id];
 }
