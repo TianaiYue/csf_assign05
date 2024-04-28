@@ -86,10 +86,6 @@ void ClientConnection::send_message(const Message& msg) {
 }
 
 void ClientConnection::handle_request(const Message& request) {
-    if (request.get_message_type() == MessageType::LOGIN) {
-        std::cerr << "Unexpected LOGIN message received after initial login." << std::endl;
-        return;
-    }
     try {
         if (!request.is_valid()) {
             throw InvalidMessage("Invalid message format");
@@ -226,26 +222,43 @@ void ClientConnection::handle_set_request(const Message& request) {
 }
 
 void ClientConnection::handle_get_request(const Message& request) {
-    Table* table = m_server->find_table(request.get_table());
-    if (!table) {
-        throw OperationException("Unknown table");
-    }
-
-    table->lock();
+    Table* table = nullptr;
     try {
-        std::string value = table->get(request.get_key());
-        stack.push(value); // Ensure the value is pushed onto the stack
-        table->unlock();
-        send_message(Message(MessageType::OK));
+        table = m_server->find_table(request.get_table());
+        if (!table) {
+            throw OperationException("Unknown table");
+        }
+
+        table->lock();
+        try {
+            std::string value = table->get(request.get_key());
+            stack.push(value);  // Ensure the value is pushed onto the stack
+            table->unlock();  // It's important to unlock before sending a message to avoid deadlocks
+            send_message(Message(MessageType::OK));
+        } catch (const std::exception& e) {
+            table->unlock();
+            send_message(Message(MessageType::ERROR, {e.what()}));
+            return;  // Changed to send an error message instead of throwing an exception
+        }
     } catch (const std::exception& e) {
-        table->unlock();
-        throw FailedTransaction(e.what());
+        send_message(Message(MessageType::ERROR, {e.what()}));
+        return;  // Handle any other exceptions gracefully
     }
 }
 
 void ClientConnection::handle_push_request(const Message& request) {
-    stack.push(request.get_arg(0));
-    send_message(Message(MessageType::OK));
+    try {
+        // Make sure there is at least one argument to push
+        if (request.get_arg(0).empty()) {  // Using get_arg(index) which is assumed to exist and return the argument at index 0
+            send_message(Message(MessageType::ERROR, {"No value provided to push"}));
+            return;
+        }
+        std::string value = request.get_arg(0); // Get the first argument for pushing onto the stack
+        stack.push(value);
+        send_message(Message(MessageType::OK));
+    } catch (const std::exception& e) {
+        send_message(Message(MessageType::ERROR, {e.what()}));
+    }
 }
 
 void ClientConnection::handle_pop_request() {
@@ -254,13 +267,18 @@ void ClientConnection::handle_pop_request() {
 }
 
 void ClientConnection::handle_top_request() {
-    if (stack.is_empty()) {
-        throw OperationException("Stack is empty");
-    } else {
-        std::string topValue = stack.get_top();
-        send_message(Message(MessageType::DATA, {topValue})); // Send DATA response for successful retrieval
+    try {
+        if (stack.is_empty()) {  // Check if the stack is empty before accessing
+            send_message(Message(MessageType::FAILED, {"Error: empty stack"}));
+            return;
+        }
+        std::string topValue = stack.get_top(); // Access the top value safely
+        send_message(Message(MessageType::DATA, {topValue}));
+    } catch (const std::exception& e) {
+        send_message(Message(MessageType::ERROR, {e.what()}));
     }
 }
+
 
 void ClientConnection::handle_arithmetic_request(const Message& request) {
         // Attempt to pop twice. This assumes stack throws an exception if underflow occurs.
