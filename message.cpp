@@ -114,9 +114,9 @@ bool Message::is_valid() const
     switch (m_message_type) {
         case MessageType::LOGIN:
         case MessageType::PUSH:
-        return m_args.size() == 1;  
+            return m_args.size() == 1;  
         case MessageType::CREATE:
-        return m_args.size() == 1 && std::regex_match(m_args[0], identifier_regex);
+            return m_args.size() == 1 && std::regex_match(m_args[0], identifier_regex);
         case MessageType::SET:
         case MessageType::GET:
         if (m_args.size() == 1 && m_message_type == MessageType::CREATE) {
@@ -126,10 +126,15 @@ bool Message::is_valid() const
         }
         return false;
         case MessageType::DATA:
-        return m_args.size() == 1 && !m_args[0].empty();
+            return m_args.size() == 1 && !m_args[0].empty();
         case MessageType::FAILED:
         case MessageType::ERROR:
-        return !m_args.empty() && !m_args[0].empty();
+            return !m_args.empty() && !m_args[0].empty();
+        case MessageType::BEGIN: // No arguments for BEGIN
+        case MessageType::COMMIT: // No arguments for COMMIT
+            return m_args.empty();
+        case MessageType::BYE: // Assuming BYE also has no arguments
+            return m_args.empty();
         default:
         return true;
     }

@@ -110,7 +110,6 @@ void Server::create_table(const std::string &name) {
     tables[name] = new_table;
 }
 
-
 Table* Server::find_table(const std::string &name) {
     Guard guard(mutex);
     auto it = tables.find(name);
@@ -120,82 +119,4 @@ Table* Server::find_table(const std::string &name) {
     } else {
         throw OperationException("Table not found");
     }
-}
-
-void Server::begin_transaction(int client_id) {
-    pthread_mutex_lock(&mutex);
-    in_transaction[client_id] = true;
-    pthread_mutex_unlock(&mutex);
-}
-
-void Server::commit_transaction(int client_id) {
-    pthread_mutex_lock(&mutex);
-    if (in_transaction[client_id]) {
-        for (const auto &table_name : transaction_locks[client_id]) {
-            auto it = tables.find(table_name);
-            if (it != tables.end()) {
-                it->second->commit_changes();
-                unlock_table(table_name, client_id);
-            }
-        }
-    }
-    in_transaction[client_id] = false;
-    pthread_mutex_unlock(&mutex);
-}
-
-void Server::rollback_transaction(int client_id) {
-    Guard guard(mutex);
-
-    if (!is_transaction_active(client_id)) {
-        // Optionally log that we tried to roll back an inactive transaction
-        return;
-    }
-
-    bool errorOccurred = false;
-    for (const auto &table_name : transaction_locks[client_id]) {
-        try {
-            Table *table = find_table(table_name);
-            if (table) {
-                table->rollback_changes();
-                table->unlock();
-            }
-        } catch (const std::exception& e) {
-            // Log the error
-            std::cerr << "Error during rollback of table " << table_name << ": " << e.what() << std::endl;
-            errorOccurred = true;
-        }
-    }
-
-    in_transaction[client_id] = false;
-    transaction_locks.erase(client_id);
-
-    if (errorOccurred) {
-        // Handle or log the fact that there was an error during rollback
-        std::cerr << "One or more errors occurred during the rollback process for client " << client_id << std::endl;
-    }
-}
-
-bool Server::lock_table(const std::string& table_name, int client_id) {
-    auto it = tables.find(table_name);
-    if (it == tables.end()) {
-        return false;
-    }
-    if (it->second->trylock()) {
-        transaction_locks[client_id].insert(table_name);
-        return true;
-    }
-    return false;
-}
-
-void Server::unlock_table(const std::string& table_name, int client_id) {
-    auto it = tables.find(table_name);
-    if (it != tables.end() && transaction_locks[client_id].find(table_name) != transaction_locks[client_id].end()) {
-        it->second->unlock();
-        transaction_locks[client_id].erase(table_name);
-    }
-}
-
-bool Server::is_transaction_active(int client_id) {
-    Guard guard(mutex);
-    return in_transaction.find(client_id) != in_transaction.end() && in_transaction[client_id];
 }

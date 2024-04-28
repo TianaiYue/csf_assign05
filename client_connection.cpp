@@ -17,6 +17,7 @@
 ClientConnection::ClientConnection( Server *server, int client_fd )
   : m_server( server )
   , m_client_fd( client_fd )
+  , m_in_transaction(false)
 {
     rio_readinitb( &m_fdbuf, m_client_fd );
     stack = ValueStack();
@@ -28,27 +29,52 @@ ClientConnection::~ClientConnection()
     close_connection(); 
 }
 
-void ClientConnection::chat_with_client() {
-    try {
+void ClientConnection::chat_with_client()
+{
+    try
+    {
         Message request = read_message();
-        if (request.get_message_type() != MessageType::LOGIN) {
+        if (request.get_message_type() != MessageType::LOGIN)
+        {
             send_message(Message(MessageType::ERROR, {"First request must be LOGIN"}));
             close_connection();
             return;
         }
         handle_login_request(request);
-        while ((request = read_message()), request.get_message_type() != MessageType::BYE) {
-            handle_request(request);
+
+        while (true)
+        {
+            try
+            {
+                request = read_message(); // Read next message
+                if (request.get_message_type() == MessageType::BYE)
+                {
+                    handle_bye_request();
+                    break; // Exit the loop if BYE message is received
+                }
+                handle_request(request); // Process the current message
+            }
+            catch (const CommException &e)
+            {
+                std::cerr << "Communication exception: " << e.what() << std::endl;
+                break; // Break the loop on communication exceptions
+            }
+            catch (const std::exception &e)
+            {
+                std::cerr << "General exception: " << e.what() << std::endl;
+                handle_exception(e);
+                break; // Handle general exceptions and potentially break out
+            }
         }
-        handle_bye_request();
-    } catch (const CommException& e) {
-        std::cerr << "Communication exception: " << e.what() << std::endl;
-        close_connection();
-    } catch (const std::exception& e) {
-        std::cerr << "General exception: " << e.what() << std::endl;
-        handle_exception(e);
     }
+    catch (const std::exception &e)
+    {
+        std::cerr << "Exception during session setup: " << e.what() << std::endl;
+        // Optionally handle any cleanup or logging here
+    }
+    close_connection(); // Ensure the connection is closed when exiting
 }
+
 
 // TODO: additional member functions
 Message ClientConnection::read_message() {
@@ -181,12 +207,18 @@ void ClientConnection::handle_create_request(const Message& request) {
 }
 
 void ClientConnection::handle_begin_request() {
-    m_server->begin_transaction(m_client_fd);
+    m_in_transaction = true;
+    begin_transaction();  // Begins a new transaction
     send_message(Message(MessageType::OK));
 }
 
 void ClientConnection::handle_commit_request() {
-    m_server->commit_transaction(m_client_fd);
+    commit_transaction();  // Commits the current transaction
+    send_message(Message(MessageType::OK));
+}
+
+void ClientConnection::handle_rollback_request() {
+    rollback_transaction();  // Rolls back the current transaction
     send_message(Message(MessageType::OK));
 }
 
@@ -207,44 +239,62 @@ void ClientConnection::handle_set_request(const Message& request) {
         throw OperationException("Stack is empty");
     }
 
-    std::string value = stack.get_top();
-    stack.pop(); // Ensure the pop is done after accessing the top.
+    lock_table(table_name); // Lock the table
 
-    table->lock();
+    std::string value = stack.get_top();
+    stack.pop();
+
     try {
-        table->set(request.get_key(), value);
-        table->unlock();
-        send_message(Message(MessageType::OK));
+        table->set(key_name, value); // Perform the set operation
+
+        if (!m_in_transaction) {
+            table->commit_changes();
+            unlock_table(table_name);  // Unlock the table
+        }
+        send_message(Message(MessageType::OK)); // Send confirmation regardless of transaction state
     } catch (const std::exception& e) {
-        table->unlock();
+        unlock_table(table_name);
         throw FailedTransaction(e.what());
     }
 }
 
+
 void ClientConnection::handle_get_request(const Message& request) {
-    Table* table = nullptr;
+    // Assume 'table_name' is validated before being used to find the table.
+    std::string table_name = request.get_table();
+    std::string key_name = request.get_key();
+
+    // Validate the table and key names.
+    if (!is_valid_username(table_name) || !is_valid_username(key_name)) {
+        throw InvalidMessage("Invalid table or key name");
+    }
+
+    // Try to find the table.
+    Table* table = m_server->find_table(table_name);
+    if (!table) {
+        throw OperationException("Unknown table");
+    }
+
+    lock_table(table_name);
     try {
-        table = m_server->find_table(request.get_table());
-        if (!table) {
-            throw OperationException("Unknown table");
+        // Get the value from the table.
+        std::string value = table->get(key_name);
+        stack.push(value); // Push the retrieved value onto the stack.
+
+        // If we are not in a transaction, we can unlock the table right away.
+        if (!m_in_transaction) {
+            unlock_table(table_name);
         }
 
-        table->lock();
-        try {
-            std::string value = table->get(request.get_key());
-            stack.push(value);  // Ensure the value is pushed onto the stack
-            table->unlock();  // It's important to unlock before sending a message to avoid deadlocks
-            send_message(Message(MessageType::OK));
-        } catch (const std::exception& e) {
-            table->unlock();
-            send_message(Message(MessageType::ERROR, {e.what()}));
-            return;  // Changed to send an error message instead of throwing an exception
-        }
+        // Respond with OK to indicate a successful operation.
+        send_message(Message(MessageType::OK));
     } catch (const std::exception& e) {
-        send_message(Message(MessageType::ERROR, {e.what()}));
-        return;  // Handle any other exceptions gracefully
+        // If there's an error, ensure we unlock the table.
+        unlock_table(table_name);
+        throw FailedTransaction(e.what());
     }
 }
+
 
 void ClientConnection::handle_push_request(const Message& request) {
     try {
@@ -349,12 +399,6 @@ void ClientConnection::handle_exception(const std::exception& e) {
     }
 }
 
-
-void ClientConnection::rollback_transaction() {
-    m_server->rollback_transaction(m_client_fd);
-    // Assuming unlock all tables logic is implemented within server's rollback
-}
-
 void ClientConnection::close_connection() {
     if (m_client_fd >= 0) {
         Close(m_client_fd);  // Close function wraps close system call, handles errors.
@@ -362,3 +406,76 @@ void ClientConnection::close_connection() {
         std::cout << "Connection with client closed." << std::endl;
     }
 }
+
+void ClientConnection::begin_transaction() {
+    m_in_transaction = true;
+}
+
+void ClientConnection::commit_transaction() {
+    if (!m_in_transaction) {
+        throw OperationException("No active transaction to commit.");
+    }
+
+    // Commit changes for all locked tables
+    for (const auto& entry : m_locked_tables) {
+        if (entry.second) {
+            entry.second->commit_changes();
+            entry.second->unlock();
+        }
+    }
+
+    m_locked_tables.clear();
+    m_in_transaction = false;
+}
+
+void ClientConnection::rollback_transaction() {
+    if (!m_in_transaction) {
+        throw OperationException("No active transaction to rollback.");
+    }
+
+    // Rollback changes for all locked tables
+    for (const auto& entry : m_locked_tables) {
+        if (entry.second) {
+            entry.second->rollback_changes();
+            entry.second->unlock();
+        }
+    }
+
+    m_locked_tables.clear();
+    m_in_transaction = false;
+}
+
+void ClientConnection::lock_table(const std::string& table_name) {
+    // Check if the table is already locked in the current transaction context
+    if (m_locked_tables.find(table_name) != m_locked_tables.end()) {
+        throw OperationException("Table is already locked within this transaction.");
+    }
+
+    // Retrieve the table; if not found, throw exception
+    Table* table = m_server->find_table(table_name);
+    if (!table) {
+        throw OperationException("Table not found.");
+    }
+
+    // Attempt to lock the table
+    if (!table->trylock()) {
+        throw OperationException("Failed to lock the table, it is already locked by another transaction.");
+    }
+
+    // Save the table pointer after successfully locking
+    m_locked_tables[table_name] = table;
+}
+
+void ClientConnection::unlock_table(const std::string& table_name) {
+    auto it = m_locked_tables.find(table_name);
+    if (it != m_locked_tables.end()) {
+        // Use the stored pointer to unlock
+        it->second->unlock();
+        // Remove the table from the map after unlocking
+        m_locked_tables.erase(it);
+    } else {
+        // This exception can help identify logical errors in the locking/unlocking sequence
+        throw OperationException("Attempt to unlock a table that is not locked by this transaction.");
+    }
+}
+

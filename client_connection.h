@@ -15,7 +15,8 @@ private:
   int m_client_fd;
   rio_t m_fdbuf;
   ValueStack stack;
-  bool first_request_handled = false;
+  bool m_in_transaction = false;
+  std::map<std::string, Table*> m_locked_tables;
 
   // copy constructor and assignment operator are prohibited
   ClientConnection( const ClientConnection & );
@@ -45,9 +46,15 @@ public:
   void handle_exception(const std::exception& e);
   void handle_arithmetic_request(const Message &request);
   void handle_bye_request();
+  void handle_rollback_request();
 
   bool is_valid_username(const std::string& username);
   void rollback_transaction();
+  void begin_transaction();
+  void commit_transaction();
+  void lock_table(const std::string& table_name);
+  void unlock_table(const std::string& table_name);
+
 };
 
 #endif // CLIENT_CONNECTION_H
