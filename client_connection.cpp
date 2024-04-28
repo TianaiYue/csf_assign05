@@ -217,7 +217,7 @@ void ClientConnection::handle_set_request(const Message& request) {
     
     // Attempt to lock the table.
     if (!m_server->lock_table(table_name, m_client_fd)) {
-        throw FailedTransaction("Could not lock table");
+        table->lock();
     }
     
     try {
@@ -227,22 +227,26 @@ void ClientConnection::handle_set_request(const Message& request) {
         table->set(key_name, value);
         send_message(Message(MessageType::OK));
     } catch (...) {
-        // Ensure that we unlock the table in case of any exception
-        m_server->unlock_table(table_name, m_client_fd);
-        throw; // Re-throw the exception to be handled by the caller
+        if (!m_server->is_transaction_active(m_client_fd)) {
+            // Only unlock if we're not in a transaction
+            table->unlock();
+        }
+        throw;
     }
-    
-    // Unlock the table after successful set
-    m_server->unlock_table(table_name, m_client_fd);
+    if (!m_server->is_transaction_active(m_client_fd)) {
+        // Unlock the table after a successful set in auto-commit mode
+        table->unlock();
+    }
 }
 
 void ClientConnection::handle_get_request(const Message& request) {
      std::string table_name = request.get_table();
-    
-    // Attempt to lock the table.
-    if (!m_server->lock_table(table_name, m_client_fd)) {
-        throw FailedTransaction("Could not lock table");
+    Table* table = m_server->find_table(request.get_table());
+    if (!m_server->is_transaction_active(m_client_fd)) {
+        // In auto-commit mode, lock the table for the duration of this operation
+        table->lock();
     }
+
 
     try {
         auto table = m_server->find_table(table_name);
@@ -250,13 +254,17 @@ void ClientConnection::handle_get_request(const Message& request) {
         stack.push(value);
         send_message(Message(MessageType::OK));
     } catch (...) {
-        // Ensure that we unlock the table in case of any exception
-        m_server->unlock_table(table_name, m_client_fd);
-        throw; // Re-throw the exception to be handled by the caller
+        if (!m_server->is_transaction_active(m_client_fd)) {
+            // Only unlock if we're not in a transaction
+            table->unlock();
+        }
+        throw;
     }
     
-    // Unlock the table after successful get
-    m_server->unlock_table(table_name, m_client_fd);
+    if (!m_server->is_transaction_active(m_client_fd)) {
+        // Unlock the table after a successful get in auto-commit mode
+        table->unlock();
+    }
 }
 
 void ClientConnection::handle_push_request(const Message& request) {
