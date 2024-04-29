@@ -239,23 +239,19 @@ void ClientConnection::handle_set_request(const Message& request) {
         throw OperationException("Stack is empty");
     }
 
-    lock_table(table_name); // Lock the table
-
+    lock_table(table); // Lock the table
     std::string value = stack.get_top();
     stack.pop();
 
-    try {
-        table->set(key_name, value); // Perform the set operation
+    
+    table->set(key_name, value); // Perform the set operation
 
-        if (!in_transaction) {
-            table->commit_changes();
-            unlock_table(table_name);  // Unlock the table
-        }
-        send_message(Message(MessageType::OK)); // Send confirmation regardless of transaction state
-    } catch (const std::exception& e) {
-        unlock_table(table_name);
-        throw FailedTransaction(e.what());
+    if (!in_transaction) {
+        table->commit_changes();
+        table->unlock();
+        locked_tables.erase(table);
     }
+    send_message(Message(MessageType::OK)); // Send confirmation regardless of transaction state
 }
 
 
@@ -275,24 +271,20 @@ void ClientConnection::handle_get_request(const Message& request) {
         throw OperationException("Unknown table");
     }
 
-    lock_table(table_name);
-    try {
+    lock_table(table);
         // Get the value from the table.
         std::string value = table->get(key_name);
         stack.push(value); // Push the retrieved value onto the stack.
 
         // If we are not in a transaction, we can unlock the table right away.
         if (!in_transaction) {
-            unlock_table(table_name);
+            table->unlock();
+            locked_tables.erase(table);
         }
 
         // Respond with OK to indicate a successful operation.
         send_message(Message(MessageType::OK));
-    } catch (const std::exception& e) {
-        // If there's an error, ensure we unlock the table.
-        unlock_table(table_name);
-        throw FailedTransaction(e.what());
-    }
+    
 }
 
 
@@ -417,65 +409,44 @@ void ClientConnection::commit_transaction() {
     }
 
     // Commit changes for all locked tables
-    for (const auto& entry : locked_tables) {
-        if (entry.second) {
-            entry.second->commit_changes();
-            entry.second->unlock();
-        }
+    for (Table* table: locked_tables) {
+        table->commit_changes();
+        table->unlock();
+        locked_tables.erase(table);
     }
 
-    locked_tables.clear();
     in_transaction = false;
 }
 
 void ClientConnection::rollback_transaction() {
-    if (!in_transaction) {
-        throw OperationException("No active transaction to rollback.");
+    if (!in_transaction) throw FailedTransaction("Error: No active transaction to rollback");
+    for (Table* table: locked_tables) {
+        table->rollback_changes();
     }
-
-    // Rollback changes for all locked tables
-    for (const auto& entry : locked_tables) {
-        if (entry.second) {
-            entry.second->rollback_changes();
-            entry.second->unlock();
-        }
-    }
-
-    locked_tables.clear();
+    unlock_all_locked_tables();
     in_transaction = false;
 }
 
-void ClientConnection::lock_table(const std::string& table_name) {
-    // Check if the table is already locked in the current transaction context
-    if (locked_tables.find(table_name) != locked_tables.end()) {
-        throw OperationException("Table is already locked within this transaction.");
+void ClientConnection::lock_table(Table* table) {
+    if (in_transaction) {
+        if (locked_tables.find(table) != locked_tables.end()) {
+            return;
+        } 
+        if (!table->trylock()) {
+            throw FailedTransaction("Error: Table couldn't be locked");
+        }
+        locked_tables.insert(table);
+    } else {
+        table->lock();
+        locked_tables.insert(table);
     }
 
-    // Retrieve the table; if not found, throw exception
-    Table* table = m_server->find_table(table_name);
-    if (!table) {
-        throw OperationException("Table not found.");
-    }
-
-    // Attempt to lock the table
-    if (!table->trylock()) {
-        throw OperationException("Failed to lock the table, it is already locked by another transaction.");
-    }
-
-    // Save the table pointer after successfully locking
-    locked_tables[table_name] = table;
 }
 
-void ClientConnection::unlock_table(const std::string& table_name) {
-    auto it = locked_tables.find(table_name);
-    if (it != locked_tables.end()) {
-        // Use the stored pointer to unlock
-        it->second->unlock();
-        // Remove the table from the map after unlocking
-        locked_tables.erase(it);
-    } else {
-        // This exception can help identify logical errors in the locking/unlocking sequence
-        throw OperationException("Attempt to unlock a table that is not locked by this transaction.");
-    }
+void ClientConnection::unlock_all_locked_tables() {
+  for (Table* table : locked_tables) {
+      table->unlock();
+  }
+  locked_tables.clear();
 }
 

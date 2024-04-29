@@ -52,8 +52,8 @@ public:
   void rollback_transaction();
   void begin_transaction();
   void commit_transaction();
-  void lock_table(const std::string& table_name);
-  void unlock_table(const std::string& table_name);
+  void lock_table(Table* table);
+  void unlock_all_locked_tables();
 
 };
 
