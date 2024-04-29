@@ -86,3 +86,9 @@ void Table::rollback_changes()
     // implement
     m_temporary_changes.clear();
 }
+
+void Table::erase(const std::string &key) {
+    if (m_data.find(key) != m_data.end()) {
+        m_data.erase(key);
+    }
+}

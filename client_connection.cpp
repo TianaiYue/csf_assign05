@@ -478,3 +478,4 @@ void ClientConnection::unlock_table(const std::string& table_name) {
         throw OperationException("Attempt to unlock a table that is not locked by this transaction.");
     }
 }
+
