@@ -26,55 +26,30 @@ ClientConnection::ClientConnection( Server *server, int client_fd )
 ClientConnection::~ClientConnection()
 {
     // TODO: implement
-    close_connection(); 
+    //close_connection(); 
+    close(m_client_fd);
 }
 
 void ClientConnection::chat_with_client()
 {
-    try
+    Message request = read_message();
+    if (request.get_message_type() != MessageType::LOGIN)
     {
-        Message request = read_message();
-        if (request.get_message_type() != MessageType::LOGIN)
-        {
-            send_message(Message(MessageType::ERROR, {"First request must be LOGIN"}));
-            close_connection();
-            return;
-        }
-        handle_login_request(request);
+        send_message(Message(MessageType::ERROR, {"First request must be LOGIN"}));
+        return;
+    }
+    handle_login_request(request);
 
-        while (true)
+    while (true){
+        request = read_message(); // Read next message
+        if (request.get_message_type() == MessageType::BYE)
         {
-            try
-            {
-                request = read_message(); // Read next message
-                if (request.get_message_type() == MessageType::BYE)
-                {
-                    handle_bye_request();
-                    break; // Exit the loop if BYE message is received
-                }
-                handle_request(request); // Process the current message
-            }
-            catch (const CommException &e)
-            {
-                std::cerr << "Communication exception: " << e.what() << std::endl;
-                break; // Break the loop on communication exceptions
-            }
-            catch (const std::exception &e)
-            {
-                std::cerr << "General exception: " << e.what() << std::endl;
-                handle_exception(e);
-                break; // Handle general exceptions and potentially break out
-            }
+            handle_bye_request();
+            break; // Exit the loop if BYE message is received
         }
+        handle_request(request);
     }
-    catch (const std::exception &e)
-    {
-        std::cerr << "Exception during session setup: " << e.what() << std::endl;
-        // Optionally handle any cleanup or logging here
-    }
-    close_connection(); // Ensure the connection is closed when exiting
 }
-
 
 // TODO: additional member functions
 Message ClientConnection::read_message() {
@@ -104,10 +79,7 @@ void ClientConnection::send_message(const Message& msg) {
             throw CommException("Failed to send message to client");
         }
     } catch (const CommException& e) {
-        // Optionally log the exception or handle it in other ways
         std::cerr << "Communication error occurred: " << e.what() << std::endl;
-        // Decide whether to close the connection or attempt recovery
-        close_connection();
     }
 }
 
@@ -159,15 +131,14 @@ void ClientConnection::handle_request(const Message& request) {
         }
     } catch (const InvalidMessage& e) {
         send_message(Message(MessageType::ERROR, {e.what()}));
-        close_connection(); // ERROR should close the session
     } catch (const OperationException& e) {
         send_message(Message(MessageType::FAILED, {e.what()})); // FAILED does not end the session
     } catch (const FailedTransaction& e) {
+        rollback_transaction();
         send_message(Message(MessageType::FAILED, {e.what()})); // Likewise, FAILED does not end the session
     } catch (const CommException& e) {
         // Communication errors should generally close the connection
         send_message(Message(MessageType::ERROR, {"Communication failure"}));
-        close_connection();
     }
 }
 
@@ -184,12 +155,12 @@ void ClientConnection::handle_login_request(const Message& request) {
 
 bool ClientConnection::is_valid_username(const std::string& username) {
     if (username.empty() || !isalpha(username[0])) {
-        return false; // First character must be a letter
+        return false;
     }
 
     for (char ch : username) {
         if (!(isalnum(ch) || ch == '_')) {
-            return false; // Only alphanumeric characters and underscores are allowed
+            return false;
         }
     }
 
@@ -208,17 +179,17 @@ void ClientConnection::handle_create_request(const Message& request) {
 
 void ClientConnection::handle_begin_request() {
     in_transaction = true;
-    begin_transaction();  // Begins a new transaction
+    begin_transaction();
     send_message(Message(MessageType::OK));
 }
 
 void ClientConnection::handle_commit_request() {
-    commit_transaction();  // Commits the current transaction
+    commit_transaction();
     send_message(Message(MessageType::OK));
 }
 
 void ClientConnection::handle_rollback_request() {
-    rollback_transaction();  // Rolls back the current transaction
+    rollback_transaction();
     send_message(Message(MessageType::OK));
 }
 
@@ -244,7 +215,7 @@ void ClientConnection::handle_set_request(const Message& request) {
     stack.pop();
 
     
-    table->set(key_name, value); // Perform the set operation
+    table->set(key_name, value);
 
     if (!in_transaction) {
         table->commit_changes();
@@ -321,7 +292,6 @@ void ClientConnection::handle_top_request() {
     }
 }
 
-
 void ClientConnection::handle_arithmetic_request(const Message& request) {
         // Attempt to pop twice. This assumes stack throws an exception if underflow occurs.
         int right, left;
@@ -373,10 +343,8 @@ void ClientConnection::handle_arithmetic_request(const Message& request) {
         send_message(Message(MessageType::OK));
 }
 
-
 void ClientConnection::handle_bye_request() {
     send_message(Message(MessageType::OK));
-    close_connection();
 }
             
 void ClientConnection::handle_exception(const std::exception& e) {
@@ -387,15 +355,6 @@ void ClientConnection::handle_exception(const std::exception& e) {
         send_message(Message(MessageType::FAILED, {e.what()}));
     } else {
         send_message(Message(MessageType::ERROR, {e.what()}));
-        close_connection();
-    }
-}
-
-void ClientConnection::close_connection() {
-    if (m_client_fd >= 0) {
-        Close(m_client_fd);  // Close function wraps close system call, handles errors.
-        m_client_fd = -1;    // Invalidate the descriptor.
-        std::cout << "Connection with client closed." << std::endl;
     }
 }
 
@@ -411,15 +370,15 @@ void ClientConnection::commit_transaction() {
     // Commit changes for all locked tables
     for (Table* table: locked_tables) {
         table->commit_changes();
-        table->unlock();
-        locked_tables.erase(table);
     }
-
+    unlock_all_locked_tables();
     in_transaction = false;
 }
 
 void ClientConnection::rollback_transaction() {
-    if (!in_transaction) throw FailedTransaction("Error: No active transaction to rollback");
+    if (!in_transaction) {
+        throw FailedTransaction("Error: No active transaction to rollback");
+    } 
     for (Table* table: locked_tables) {
         table->rollback_changes();
     }
