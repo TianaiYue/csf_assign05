@@ -243,18 +243,18 @@ void ClientConnection::handle_get_request(const Message& request) {
     }
 
     lock_table(table);
-        // Get the value from the table.
-        std::string value = table->get(key_name);
-        stack.push(value); // Push the retrieved value onto the stack.
+    // Get the value from the table.
+    std::string value = table->get(key_name);
+    stack.push(value); // Push the retrieved value onto the stack.
 
-        // If we are not in a transaction, we can unlock the table right away.
-        if (!in_transaction) {
-            table->unlock();
-            locked_tables.erase(table);
-        }
+    // If we are not in a transaction, we can unlock the table right away.
+    if (!in_transaction) {
+        table->unlock();
+        locked_tables.erase(table);
+    }
 
-        // Respond with OK to indicate a successful operation.
-        send_message(Message(MessageType::OK));
+    // Respond with OK to indicate a successful operation.
+    send_message(Message(MessageType::OK));
     
 }
 
