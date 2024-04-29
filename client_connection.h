@@ -15,8 +15,8 @@ private:
   int m_client_fd;
   rio_t m_fdbuf;
   ValueStack stack;
-  bool m_in_transaction = false;
-  std::map<std::string, Table*> m_locked_tables;
+  bool in_transaction = false;
+  std::set<Table*> locked_tables;
 
   // copy constructor and assignment operator are prohibited
   ClientConnection( const ClientConnection & );

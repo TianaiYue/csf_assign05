@@ -17,7 +17,7 @@
 ClientConnection::ClientConnection( Server *server, int client_fd )
   : m_server( server )
   , m_client_fd( client_fd )
-  , m_in_transaction(false)
+  , in_transaction(false)
 {
     rio_readinitb( &m_fdbuf, m_client_fd );
     stack = ValueStack();
@@ -207,7 +207,7 @@ void ClientConnection::handle_create_request(const Message& request) {
 }
 
 void ClientConnection::handle_begin_request() {
-    m_in_transaction = true;
+    in_transaction = true;
     begin_transaction();  // Begins a new transaction
     send_message(Message(MessageType::OK));
 }
@@ -247,7 +247,7 @@ void ClientConnection::handle_set_request(const Message& request) {
     try {
         table->set(key_name, value); // Perform the set operation
 
-        if (!m_in_transaction) {
+        if (!in_transaction) {
             table->commit_changes();
             unlock_table(table_name);  // Unlock the table
         }
@@ -282,7 +282,7 @@ void ClientConnection::handle_get_request(const Message& request) {
         stack.push(value); // Push the retrieved value onto the stack.
 
         // If we are not in a transaction, we can unlock the table right away.
-        if (!m_in_transaction) {
+        if (!in_transaction) {
             unlock_table(table_name);
         }
 
@@ -408,46 +408,46 @@ void ClientConnection::close_connection() {
 }
 
 void ClientConnection::begin_transaction() {
-    m_in_transaction = true;
+    in_transaction = true;
 }
 
 void ClientConnection::commit_transaction() {
-    if (!m_in_transaction) {
+    if (!in_transaction) {
         throw OperationException("No active transaction to commit.");
     }
 
     // Commit changes for all locked tables
-    for (const auto& entry : m_locked_tables) {
+    for (const auto& entry : locked_tables) {
         if (entry.second) {
             entry.second->commit_changes();
             entry.second->unlock();
         }
     }
 
-    m_locked_tables.clear();
-    m_in_transaction = false;
+    locked_tables.clear();
+    in_transaction = false;
 }
 
 void ClientConnection::rollback_transaction() {
-    if (!m_in_transaction) {
+    if (!in_transaction) {
         throw OperationException("No active transaction to rollback.");
     }
 
     // Rollback changes for all locked tables
-    for (const auto& entry : m_locked_tables) {
+    for (const auto& entry : locked_tables) {
         if (entry.second) {
             entry.second->rollback_changes();
             entry.second->unlock();
         }
     }
 
-    m_locked_tables.clear();
-    m_in_transaction = false;
+    locked_tables.clear();
+    in_transaction = false;
 }
 
 void ClientConnection::lock_table(const std::string& table_name) {
     // Check if the table is already locked in the current transaction context
-    if (m_locked_tables.find(table_name) != m_locked_tables.end()) {
+    if (locked_tables.find(table_name) != locked_tables.end()) {
         throw OperationException("Table is already locked within this transaction.");
     }
 
@@ -463,16 +463,16 @@ void ClientConnection::lock_table(const std::string& table_name) {
     }
 
     // Save the table pointer after successfully locking
-    m_locked_tables[table_name] = table;
+    locked_tables[table_name] = table;
 }
 
 void ClientConnection::unlock_table(const std::string& table_name) {
-    auto it = m_locked_tables.find(table_name);
-    if (it != m_locked_tables.end()) {
+    auto it = locked_tables.find(table_name);
+    if (it != locked_tables.end()) {
         // Use the stored pointer to unlock
         it->second->unlock();
         // Remove the table from the map after unlocking
-        m_locked_tables.erase(it);
+        locked_tables.erase(it);
     } else {
         // This exception can help identify logical errors in the locking/unlocking sequence
         throw OperationException("Attempt to unlock a table that is not locked by this transaction.");
